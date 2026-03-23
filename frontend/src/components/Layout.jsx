@@ -13,7 +13,7 @@ export default function Layout({ children }) {
 
 const styles = {
   main: {
-    marginLeft: 240, flex: 1, minHeight: '100vh',
+    marginLeft: 320, flex: 1, minHeight: '100vh',
     background: '#f3f4f6', padding: 24,
   },
 };

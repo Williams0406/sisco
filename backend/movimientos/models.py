@@ -1,13 +1,12 @@
 """
 models.py — App movimientos
-Contiene: DET_TARIFARIO, MOV_TICKET, CAB_DOCUMENTO_VENTA,
-          CAB_COBRANZA_CREDITO, DET_COBRANZA_CREDITO,
-          CAB_CIERRE_TURNO, CAB_RECIBO_EGRESO, CAB_RECIBO_INGRESO
+Basado en el models.py original de BD_SISCO
 """
 from django.db import models
 from maestros.models import (
     MaeCliente, MaeChofer, MaeTipoVehiculo, MaeVehiculo,
-    MaeTipoIncidente, MaeTipoEgreso, MaeTipoIngreso, MaeGarita,
+    MaeTipoIncidente, MaeTipoEgreso, MaeTipoIngreso,
+    MaeGarita, MaeProveedor,
 )
 
 
@@ -16,18 +15,16 @@ from maestros.models import (
 # ---------------------------------------------------------------------------
 
 class DetTarifario(models.Model):
-    """
-    Tarifas por tipo de vehículo.
-    Opcionalmente asignadas a un cliente VIP específico.
-    """
-    nu_codi_tarifario = models.AutoField(primary_key=True)
+    """Tarifario de estacionamiento por tipo de vehículo y cliente."""
+    ch_codi_tarifario = models.CharField(max_length=6, primary_key=True)
+    vc_desc_tarifario = models.CharField(max_length=50, null=True, blank=True)
     ch_tipo_vehiculo = models.ForeignKey(
         MaeTipoVehiculo,
         on_delete=models.PROTECT,
         db_column='CH_TIPO_VEHICULO',
         to_field='ch_tipo_vehiculo',
         null=True, blank=True,
-        related_name='tarifas',
+        related_name='tarifarios',
     )
     ch_codi_cliente = models.ForeignKey(
         MaeCliente,
@@ -35,11 +32,15 @@ class DetTarifario(models.Model):
         db_column='CH_CODI_CLIENTE',
         to_field='ch_codi_cliente',
         null=True, blank=True,
-        related_name='tarifas',
+        related_name='tarifarios',
     )
-    nu_impo_tarifa = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
-    nu_minu_tolerancia = models.IntegerField(null=True, blank=True)
+    nu_impo_dia = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_noche = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_frccn_dia = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_frccn_noche = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_nume_hora_tlrnc = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_nume_hora_frccn = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    ch_tipo_cmprbnt = models.CharField(max_length=2, null=True, blank=True)
     ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
     ch_codi_usua_regi = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
@@ -51,21 +52,16 @@ class DetTarifario(models.Model):
         verbose_name = 'Tarifario'
 
     def __str__(self):
-        return f'Tarifa #{self.nu_codi_tarifario}'
+        return f'{self.ch_codi_tarifario} – {self.vc_desc_tarifario}'
 
 
 # ---------------------------------------------------------------------------
-# TICKET (ALQUILER DE COCHERA)
+# TICKET
 # ---------------------------------------------------------------------------
 
 class MovTicket(models.Model):
-    """
-    Ticket de ingreso/salida de vehículo.
-    Tabla central del sistema operativo.
-    """
+    """Ticket de ingreso/salida de vehículo. Tabla central del sistema."""
     nu_codi_ticket = models.AutoField(primary_key=True)
-    dt_fech_ingre = models.DateTimeField(null=True, blank=True)
-    dt_fech_salid = models.DateTimeField(null=True, blank=True)
     ch_codi_garita = models.ForeignKey(
         MaeGarita,
         on_delete=models.PROTECT,
@@ -74,6 +70,9 @@ class MovTicket(models.Model):
         null=True, blank=True,
         related_name='tickets',
     )
+    dt_fech_emision = models.DateTimeField(null=True, blank=True)
+    dt_fech_turno = models.DateTimeField(null=True, blank=True)
+    ch_codi_turno_caja = models.CharField(max_length=2, null=True, blank=True)
     ch_codi_vehiculo = models.ForeignKey(
         MaeVehiculo,
         on_delete=models.PROTECT,
@@ -98,11 +97,11 @@ class MovTicket(models.Model):
         null=True, blank=True,
         related_name='tickets',
     )
-    nu_codi_tarifario = models.ForeignKey(
+    ch_codi_tarifario = models.ForeignKey(
         DetTarifario,
         on_delete=models.PROTECT,
-        db_column='NU_CODI_TARIFARIO',
-        to_field='nu_codi_tarifario',
+        db_column='CH_CODI_TARIFARIO',
+        to_field='ch_codi_tarifario',
         null=True, blank=True,
         related_name='tickets',
     )
@@ -114,29 +113,61 @@ class MovTicket(models.Model):
         null=True, blank=True,
         related_name='tickets',
     )
-    nu_impo_cobro = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
-    nu_minu_estancia = models.IntegerField(null=True, blank=True)
-    ch_esta_ticket = models.CharField(max_length=2, null=True, blank=True)
+    dt_fech_ingreso = models.DateTimeField(null=True, blank=True)
+    dt_fech_salida = models.DateTimeField(null=True, blank=True)
+    ch_nume_telefono = models.CharField(max_length=20, null=True, blank=True)
+    ch_esta_duermen = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_llave = models.CharField(max_length=1, null=True, blank=True)
+    vc_obse_tckt_ingreso = models.CharField(max_length=100, null=True, blank=True)
+    ch_obse_tckt_salida = models.CharField(max_length=100, null=True, blank=True)
+    ch_codi_cajero = models.CharField(max_length=15, null=True, blank=True)
+    nu_impo_total = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_subtotal = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_saldo = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_dscto = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_dia = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_noche = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_cant_dia = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_cant_noche = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_tota_dia = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_tota_noche = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_dia_frccn = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_noche_frccn = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_cant_dia_frccn = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_cant_noche_frccn = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_paga = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_vuelto = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    ch_tipo_comprobante = models.CharField(max_length=2, null=True, blank=True)
+    ch_seri_tckt = models.CharField(max_length=4, null=True, blank=True)
+    ch_nume_tckt = models.CharField(max_length=10, null=True, blank=True)
+    ch_esta_ticket = models.CharField(max_length=1, null=True, blank=True)
     ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
-    ch_tipo_pago = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_cancelado = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_condicion = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_incidente = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_cliente_vip = models.CharField(max_length=1, null=True, blank=True)
+    ch_tipo_vehiculo = models.CharField(max_length=2, null=True, blank=True)
+    ch_codi_garita_sld = models.CharField(max_length=3, null=True, blank=True)
+    ch_codi_turno_sld = models.CharField(max_length=2, null=True, blank=True)
+    ch_codi_cajero_sld = models.CharField(max_length=15, null=True, blank=True)
+    ch_codi_usua_dscto = models.CharField(max_length=15, null=True, blank=True)
+    vc_desc_dscto = models.CharField(max_length=100, null=True, blank=True)
+    dt_fech_cancelado = models.DateTimeField(null=True, blank=True)
+    dt_fech_turno_sld = models.DateTimeField(null=True, blank=True)
+    dt_fech_emision_sld = models.DateTimeField(null=True, blank=True)
     ch_codi_usua_regi = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
+    ch_codi_usua_modi_sld = models.CharField(max_length=15, null=True, blank=True)
     dt_fech_usua_regi = models.DateTimeField(null=True, blank=True)
     dt_fech_usua_modi = models.DateTimeField(null=True, blank=True)
-    ch_plac_vehiculo = models.CharField(max_length=20, null=True, blank=True)
-    ch_codi_turno_caja = models.CharField(max_length=2, null=True, blank=True)
-    dt_fech_turno = models.DateTimeField(null=True, blank=True)
-    vc_obse_ticket = models.CharField(max_length=100, null=True, blank=True)
-    nu_impo_cobro_cred = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
+    dt_fech_usua_modi_sld = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = 'MOV_TICKET'
         verbose_name = 'Ticket'
 
     def __str__(self):
-        return f'Ticket #{self.nu_codi_ticket} – {self.ch_plac_vehiculo}'
+        return f'Ticket #{self.nu_codi_ticket}'
 
 
 # ---------------------------------------------------------------------------
@@ -144,9 +175,13 @@ class MovTicket(models.Model):
 # ---------------------------------------------------------------------------
 
 class CabCobranzaCredito(models.Model):
-    """Cabecera de cobranza a crédito."""
+    """Cabecera de cobranza al crédito."""
     nu_codi_cobr_cred = models.AutoField(primary_key=True)
-    dt_fech_cobr_cred = models.DateTimeField(null=True, blank=True)
+    dt_fech_cobr = models.DateTimeField(null=True, blank=True)
+    vc_obse_cobr = models.CharField(max_length=100, null=True, blank=True)
+    ch_seri_cobr = models.CharField(max_length=4, null=True, blank=True)
+    ch_nume_cobr = models.CharField(max_length=10, null=True, blank=True) #innecesario
+    nu_impo_total = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
     ch_codi_cliente = models.ForeignKey(
         MaeCliente,
         on_delete=models.PROTECT,
@@ -155,39 +190,34 @@ class CabCobranzaCredito(models.Model):
         null=True, blank=True,
         related_name='cobranzas_credito',
     )
-    nu_impo_total = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
+    ch_codi_cajero = models.CharField(max_length=15, null=True, blank=True)
+    ch_codi_garita = models.CharField(max_length=3, null=True, blank=True)
+    ch_codi_turno_caja = models.CharField(max_length=2, null=True, blank=True) #por que?
+    dt_fech_turno = models.DateTimeField(null=True, blank=True) 
     ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
     ch_codi_usua_regi = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
     dt_fech_usua_regi = models.DateTimeField(null=True, blank=True)
     dt_fech_usua_modi = models.DateTimeField(null=True, blank=True)
-    ch_seri_cobr_cred = models.CharField(max_length=4, null=True, blank=True)
-    ch_nume_cobr_cred = models.CharField(max_length=10, null=True, blank=True)
-    ch_codi_cajero = models.CharField(max_length=15, null=True, blank=True)
-    ch_codi_garita = models.CharField(max_length=3, null=True, blank=True)
-    ch_codi_turno_caja = models.CharField(max_length=2, null=True, blank=True)
-    dt_fech_turno = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = 'CAB_COBRANZA_CREDITO'
-        verbose_name = 'Cobranza a Crédito'
+        verbose_name = 'Cobranza Crédito'
 
     def __str__(self):
         return f'Cobranza #{self.nu_codi_cobr_cred}'
 
 
 class DetCobranzaCredito(models.Model):
-    """Detalle (líneas de ticket) de una cobranza a crédito."""
-    nu_codi_det_cobr = models.AutoField(primary_key=True)
+    """Detalle de tickets en una cobranza al crédito."""
     nu_codi_cobr_cred = models.ForeignKey(
         CabCobranzaCredito,
         on_delete=models.PROTECT,
         db_column='NU_CODI_COBR_CRED',
         to_field='nu_codi_cobr_cred',
-        null=True, blank=True,
         related_name='detalles',
     )
+    nu_codi_detalle = models.IntegerField() # no es autoincremental, se asigna secuencialmente por cada cobranza
     nu_codi_ticket = models.ForeignKey(
         MovTicket,
         on_delete=models.PROTECT,
@@ -196,8 +226,11 @@ class DetCobranzaCredito(models.Model):
         null=True, blank=True,
         related_name='detalles_cobranza',
     )
-    nu_impo_cobro = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_cobr = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_original = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    ch_seri_tckt = models.CharField(max_length=4, null=True, blank=True) #repetitivo
+    ch_nume_tckt = models.CharField(max_length=10, null=True, blank=True)
+    ch_plac_vehiculo = models.CharField(max_length=20, null=True, blank=True)
     ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
     ch_codi_usua_regi = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
@@ -206,10 +239,11 @@ class DetCobranzaCredito(models.Model):
 
     class Meta:
         db_table = 'DET_COBRANZA_CREDITO'
+        unique_together = [('nu_codi_cobr_cred', 'nu_codi_detalle')]
         verbose_name = 'Detalle Cobranza Crédito'
 
     def __str__(self):
-        return f'Det.Cobranza #{self.nu_codi_det_cobr}'
+        return f'Det.Cobranza {self.nu_codi_cobr_cred_id}-{self.nu_codi_detalle}'
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +253,7 @@ class DetCobranzaCredito(models.Model):
 class CabDocumentoVenta(models.Model):
     """Comprobante de venta generado a partir de un ticket."""
     nu_codi_docu_vent = models.AutoField(primary_key=True)
-    dt_fech_docu_vent = models.DateTimeField(null=True, blank=True)
+    dt_fech_emision = models.DateTimeField(null=True, blank=True)
     nu_codi_ticket = models.ForeignKey(
         MovTicket,
         on_delete=models.PROTECT,
@@ -246,17 +280,14 @@ class CabDocumentoVenta(models.Model):
     )
     ch_seri_cmprbt = models.CharField(max_length=4, null=True, blank=True)
     ch_nume_cmprbt = models.CharField(max_length=10, null=True, blank=True)
+    ch_tipo_cmprbnt = models.CharField(max_length=2, null=True, blank=True)
     vc_desc_cliente = models.CharField(max_length=100, null=True, blank=True)
     vc_dire_cliente = models.CharField(max_length=100, null=True, blank=True)
     vc_obse_cmprbt = models.CharField(max_length=100, null=True, blank=True)
-    ch_tipo_cmprbnt = models.CharField(max_length=2, null=True, blank=True)
-    nu_impo_total = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
-    nu_impo_igv = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
-    nu_impo_afecto = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
     ch_ruc_cliente = models.CharField(max_length=11, null=True, blank=True)
+    nu_impo_total = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_igv = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_afecto = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
     ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
     ch_codi_usua_regi = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
@@ -281,28 +312,20 @@ class CabCierreTurno(models.Model):
     dt_fech_turno = models.DateTimeField(null=True, blank=True)
     ch_codi_turno_caja = models.CharField(max_length=2, null=True, blank=True)
     ch_codi_cajero = models.CharField(max_length=15, null=True, blank=True)
+    ch_codi_garita = models.CharField(max_length=3, null=True, blank=True)
     ch_seri_cierre = models.CharField(max_length=4, null=True, blank=True)
     ch_nume_cierre = models.CharField(max_length=10, null=True, blank=True)
-    nu_impo_tota_efectivo = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
-    nu_impo_tota_credito = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
-    nu_impo_total = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
-    nu_impo_cobr_cred = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
-    nu_impo_tota_ingr = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
-    nu_impo_egre = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
-    nu_impo_util_turno = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
-    nu_impo_otro_ingr = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
-    ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
+    nu_impo_tota_efectivo = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_tota_credito = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_cobr_cred = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_tota_ingr = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_egre = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_otro_ingr = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_total = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_util_turno = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
     ch_tipo_cierre = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
     vc_obse_cierre = models.CharField(max_length=100, null=True, blank=True)
-    ch_codi_garita = models.CharField(max_length=3, null=True, blank=True)
     ch_codi_usua_regi = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
     dt_fech_usua_regi = models.DateTimeField(null=True, blank=True)
@@ -317,18 +340,18 @@ class CabCierreTurno(models.Model):
 
 
 # ---------------------------------------------------------------------------
-# EGRESOS E INGRESOS DE CAJA
+# EGRESOS E INGRESOS
 # ---------------------------------------------------------------------------
 
 class CabReciboEgreso(models.Model):
     """Recibo de egreso de caja."""
     nu_codi_recibo = models.AutoField(primary_key=True)
     dt_fech_egre = models.DateTimeField(null=True, blank=True)
+    dt_fech_turno = models.DateTimeField(null=True, blank=True)
     vc_obse_egre = models.CharField(max_length=100, null=True, blank=True)
     ch_seri_egre = models.CharField(max_length=4, null=True, blank=True)
     ch_nume_egre = models.CharField(max_length=10, null=True, blank=True)
-    nu_impo_egre = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_egre = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
     ch_codi_tipo_egreso = models.ForeignKey(
         MaeTipoEgreso,
         on_delete=models.PROTECT,
@@ -338,7 +361,7 @@ class CabReciboEgreso(models.Model):
         related_name='recibos_egreso',
     )
     ch_codi_proveedor = models.ForeignKey(
-        'maestros.MaeProveedor',
+        MaeProveedor,
         on_delete=models.PROTECT,
         db_column='CH_CODI_PROVEEDOR',
         to_field='ch_codi_proveedor',
@@ -348,7 +371,6 @@ class CabReciboEgreso(models.Model):
     ch_codi_cajero = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_garita = models.CharField(max_length=3, null=True, blank=True)
     ch_codi_turno_caja = models.CharField(max_length=2, null=True, blank=True)
-    dt_fech_turno = models.DateTimeField(null=True, blank=True)
     ch_codi_autoriza = models.CharField(max_length=15, null=True, blank=True)
     ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
     ch_codi_usua_regi = models.CharField(max_length=15, null=True, blank=True)
@@ -368,11 +390,11 @@ class CabReciboIngreso(models.Model):
     """Recibo de ingreso de caja."""
     nu_codi_recibo = models.AutoField(primary_key=True)
     dt_fech_ingr = models.DateTimeField(null=True, blank=True)
+    dt_fech_turno = models.DateTimeField(null=True, blank=True)
     vc_obse_ingr = models.CharField(max_length=100, null=True, blank=True)
     ch_seri_ingr = models.CharField(max_length=4, null=True, blank=True)
     ch_nume_ingr = models.CharField(max_length=10, null=True, blank=True)
-    nu_impo_ingr = models.DecimalField(
-        max_digits=12, decimal_places=3, null=True, blank=True)
+    nu_impo_ingr = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
     ch_codi_cliente = models.ForeignKey(
         MaeCliente,
         on_delete=models.PROTECT,
@@ -392,7 +414,6 @@ class CabReciboIngreso(models.Model):
     ch_codi_cajero = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_garita = models.CharField(max_length=3, null=True, blank=True)
     ch_codi_turno_caja = models.CharField(max_length=2, null=True, blank=True)
-    dt_fech_turno = models.DateTimeField(null=True, blank=True)
     ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
     ch_codi_usua_regi = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)

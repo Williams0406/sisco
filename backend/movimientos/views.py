@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 import django_filters
+from django.utils import timezone
 
 from .models import (
     DetTarifario, MovTicket,
@@ -11,40 +12,45 @@ from .models import (
     CabCierreTurno, CabReciboEgreso, CabReciboIngreso,
 )
 from .serializers import (
-    DetTarifarioSerializer, MovTicketSerializer, MovTicketListSerializer,
+    DetTarifarioSerializer,
+    MovTicketSerializer, MovTicketListSerializer,
     CabCobranzaCreditoSerializer, CabCobranzaCreditoListSerializer,
     DetCobranzaCreditoSerializer, CabDocumentoVentaSerializer,
-    CabCierreTurnoSerializer, CabReciboEgresoSerializer, CabReciboIngresoSerializer,
+    CabCierreTurnoSerializer, CabReciboEgresoSerializer,
+    CabReciboIngresoSerializer,
 )
 
 
 # ---------------------------------------------------------------------------
-# FILTROS PERSONALIZADOS
+# FILTROS
 # ---------------------------------------------------------------------------
 
 class TicketFilter(django_filters.FilterSet):
     fecha_desde = django_filters.DateTimeFilter(
-        field_name='dt_fech_ingre', lookup_expr='gte')
+        field_name='dt_fech_ingreso', lookup_expr='gte')
     fecha_hasta = django_filters.DateTimeFilter(
-        field_name='dt_fech_ingre', lookup_expr='lte')
-    placa = django_filters.CharFilter(
-        field_name='ch_plac_vehiculo', lookup_expr='icontains')
+        field_name='dt_fech_ingreso', lookup_expr='lte')
 
     class Meta:
         model = MovTicket
-        fields = ['ch_esta_ticket', 'ch_tipo_pago', 'ch_codi_garita',
-                  'ch_codi_cliente', 'fecha_desde', 'fecha_hasta', 'placa']
+        fields = [
+            'ch_esta_ticket', 'ch_tipo_comprobante',
+            'ch_codi_garita', 'ch_codi_cliente',
+            'ch_codi_turno_caja', 'ch_esta_activo',
+            'fecha_desde', 'fecha_hasta',
+        ]
 
 
 class CobranzaFilter(django_filters.FilterSet):
     fecha_desde = django_filters.DateTimeFilter(
-        field_name='dt_fech_cobr_cred', lookup_expr='gte')
+        field_name='dt_fech_cobr', lookup_expr='gte')
     fecha_hasta = django_filters.DateTimeFilter(
-        field_name='dt_fech_cobr_cred', lookup_expr='lte')
+        field_name='dt_fech_cobr', lookup_expr='lte')
 
     class Meta:
         model = CabCobranzaCredito
-        fields = ['ch_codi_cliente', 'ch_esta_activo', 'fecha_desde', 'fecha_hasta']
+        fields = ['ch_codi_cliente', 'ch_esta_activo',
+                  'ch_codi_garita', 'fecha_desde', 'fecha_hasta']
 
 
 class EgresoFilter(django_filters.FilterSet):
@@ -89,12 +95,13 @@ class MovTicketViewSet(viewsets.ModelViewSet):
     queryset = MovTicket.objects.select_related(
         'ch_codi_garita', 'ch_codi_vehiculo',
         'ch_codi_cliente', 'ch_codi_chofer',
+        'ch_codi_tarifario',
     ).all()
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_class = TicketFilter
-    search_fields = ['ch_plac_vehiculo', 'nu_codi_ticket']
-    ordering_fields = ['dt_fech_ingre', 'nu_codi_ticket']
-    ordering = ['-dt_fech_ingre']
+    search_fields = ['ch_seri_tckt', 'ch_nume_tckt']
+    ordering_fields = ['dt_fech_ingreso', 'nu_codi_ticket']
+    ordering = ['-dt_fech_ingreso']
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -103,14 +110,13 @@ class MovTicketViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='cerrar')
     def cerrar_ticket(self, request, pk=None):
-        """Marca el ticket como cerrado (salida registrada)."""
+        """Registra la salida del vehículo."""
         ticket = self.get_object()
-        from django.utils import timezone
-        ticket.dt_fech_salid = timezone.now()
-        ticket.ch_esta_ticket = 'CE'  # CE = Cerrado
+        ticket.dt_fech_salida  = timezone.now()
+        ticket.ch_esta_ticket  = '1'   # 1 = cerrado/salida registrada
+        ticket.ch_esta_cancelado = '0'
         ticket.save()
-        serializer = MovTicketSerializer(ticket)
-        return Response(serializer.data)
+        return Response(MovTicketSerializer(ticket).data)
 
 
 class CabCobranzaCreditoViewSet(viewsets.ModelViewSet):
@@ -119,8 +125,8 @@ class CabCobranzaCreditoViewSet(viewsets.ModelViewSet):
     ).prefetch_related('detalles').all()
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_class = CobranzaFilter
-    search_fields = ['ch_seri_cobr_cred', 'ch_nume_cobr_cred']
-    ordering = ['-dt_fech_cobr_cred']
+    search_fields = ['ch_seri_cobr', 'ch_nume_cobr']
+    ordering = ['-dt_fech_cobr']
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -139,13 +145,13 @@ class DetCobranzaCreditoViewSet(viewsets.ModelViewSet):
 
 class CabDocumentoVentaViewSet(viewsets.ModelViewSet):
     queryset = CabDocumentoVenta.objects.select_related(
-        'nu_codi_ticket', 'ch_codi_cliente'
+        'nu_codi_ticket', 'ch_codi_cliente', 'nu_codi_cobr_cred'
     ).all()
     serializer_class = CabDocumentoVentaSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['ch_tipo_cmprbnt', 'ch_esta_activo', 'ch_codi_cliente']
     search_fields = ['ch_seri_cmprbt', 'ch_nume_cmprbt', 'ch_ruc_cliente']
-    ordering = ['-dt_fech_docu_vent']
+    ordering = ['-dt_fech_emision']
 
 
 class CabCierreTurnoViewSet(viewsets.ModelViewSet):

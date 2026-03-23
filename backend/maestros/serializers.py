@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import (
     MaeCliente, MaeChofer, MaeTipoVehiculo, MaeVehiculo, MaeProveedor,
-    MaeTipoEgreso, MaeTipoIngreso, MaeTipoDocumento, MaeGarita,
+    MaeTipoEgreso, MaeTipoIngreso, MaeTipoIncidente, MaeTipoDocumento, MaeGarita,
     MaeUsuario, MaePerfil,
 )
 
@@ -53,6 +53,12 @@ class MaeTipoEgresoSerializer(serializers.ModelSerializer):
 class MaeTipoIngresoSerializer(serializers.ModelSerializer):
     class Meta:
         model = MaeTipoIngreso
+        fields = '__all__'
+
+
+class MaeTipoIncidenteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MaeTipoIncidente
         fields = '__all__'
 
 

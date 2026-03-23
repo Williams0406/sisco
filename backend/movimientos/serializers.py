@@ -6,10 +6,6 @@ from .models import (
 )
 
 
-# ---------------------------------------------------------------------------
-# TARIFARIO
-# ---------------------------------------------------------------------------
-
 class DetTarifarioSerializer(serializers.ModelSerializer):
     tipo_vehiculo_desc = serializers.CharField(
         source='ch_tipo_vehiculo.vc_desc_tipo_vehiculo', read_only=True)
@@ -21,20 +17,17 @@ class DetTarifarioSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-# ---------------------------------------------------------------------------
-# TICKET
-# ---------------------------------------------------------------------------
-
 class MovTicketSerializer(serializers.ModelSerializer):
-    # Campos descriptivos de FK (solo lectura)
-    garita_desc     = serializers.CharField(
-        source='ch_codi_garita.vc_desc_garita',         read_only=True)
-    vehiculo_placa  = serializers.CharField(
-        source='ch_codi_vehiculo.ch_plac_vehiculo',      read_only=True)
-    cliente_desc    = serializers.CharField(
-        source='ch_codi_cliente.vc_razo_soci_cliente',   read_only=True)
-    chofer_desc     = serializers.CharField(
-        source='ch_codi_chofer.vc_desc_chofer',          read_only=True)
+    garita_desc    = serializers.CharField(
+        source='ch_codi_garita.vc_desc_garita',       read_only=True)
+    vehiculo_placa = serializers.CharField(
+        source='ch_codi_vehiculo.ch_plac_vehiculo',    read_only=True)
+    cliente_desc   = serializers.CharField(
+        source='ch_codi_cliente.vc_razo_soci_cliente', read_only=True)
+    chofer_desc    = serializers.CharField(
+        source='ch_codi_chofer.vc_desc_chofer',        read_only=True)
+    tarifario_desc = serializers.CharField(
+        source='ch_codi_tarifario.vc_desc_tarifario',  read_only=True)
 
     class Meta:
         model = MovTicket
@@ -42,30 +35,27 @@ class MovTicketSerializer(serializers.ModelSerializer):
 
 
 class MovTicketListSerializer(serializers.ModelSerializer):
-    """Serializer liviano para listados/tablas (menos campos)."""
-    cliente_desc   = serializers.CharField(
+    cliente_desc = serializers.CharField(
         source='ch_codi_cliente.vc_razo_soci_cliente', read_only=True)
-    garita_desc    = serializers.CharField(
+    garita_desc  = serializers.CharField(
         source='ch_codi_garita.vc_desc_garita',        read_only=True)
 
     class Meta:
         model = MovTicket
         fields = [
-            'nu_codi_ticket', 'dt_fech_ingre', 'dt_fech_salid',
-            'ch_plac_vehiculo', 'nu_impo_cobro', 'ch_esta_ticket',
-            'ch_tipo_pago', 'cliente_desc', 'garita_desc',
+            'nu_codi_ticket', 'dt_fech_ingreso', 'dt_fech_salida',
+            'ch_seri_tckt', 'ch_nume_tckt', 'nu_impo_total',
+            'ch_esta_ticket', 'ch_tipo_comprobante',
+            'cliente_desc', 'garita_desc',
+            'ch_codi_turno_caja', 'ch_codi_cajero',
         ]
 
 
-# ---------------------------------------------------------------------------
-# COBRANZA A CRÉDITO
-# ---------------------------------------------------------------------------
-
 class DetCobranzaCreditoSerializer(serializers.ModelSerializer):
-    ticket_placa = serializers.CharField(
-        source='nu_codi_ticket.ch_plac_vehiculo', read_only=True)
-    ticket_fecha = serializers.DateTimeField(
-        source='nu_codi_ticket.dt_fech_ingre',   read_only=True)
+    ticket_serie = serializers.CharField(
+        source='nu_codi_ticket.ch_seri_tckt', read_only=True)
+    ticket_numero = serializers.CharField(
+        source='nu_codi_ticket.ch_nume_tckt', read_only=True)
 
     class Meta:
         model = DetCobranzaCredito
@@ -83,22 +73,18 @@ class CabCobranzaCreditoSerializer(serializers.ModelSerializer):
 
 
 class CabCobranzaCreditoListSerializer(serializers.ModelSerializer):
-    """Serializer liviano para la tabla de cobranzas."""
     cliente_desc = serializers.CharField(
         source='ch_codi_cliente.vc_razo_soci_cliente', read_only=True)
 
     class Meta:
         model = CabCobranzaCredito
         fields = [
-            'nu_codi_cobr_cred', 'dt_fech_cobr_cred',
-            'ch_seri_cobr_cred', 'ch_nume_cobr_cred',
-            'nu_impo_total', 'ch_esta_activo', 'cliente_desc',
+            'nu_codi_cobr_cred', 'dt_fech_cobr',
+            'ch_seri_cobr', 'ch_nume_cobr',
+            'nu_impo_total', 'ch_esta_activo',
+            'cliente_desc', 'ch_codi_garita', 'ch_codi_cajero',
         ]
 
-
-# ---------------------------------------------------------------------------
-# DOCUMENTO DE VENTA
-# ---------------------------------------------------------------------------
 
 class CabDocumentoVentaSerializer(serializers.ModelSerializer):
     cliente_desc = serializers.CharField(
@@ -109,24 +95,16 @@ class CabDocumentoVentaSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-# ---------------------------------------------------------------------------
-# CIERRE DE TURNO
-# ---------------------------------------------------------------------------
-
 class CabCierreTurnoSerializer(serializers.ModelSerializer):
     class Meta:
         model = CabCierreTurno
         fields = '__all__'
 
 
-# ---------------------------------------------------------------------------
-# EGRESOS E INGRESOS
-# ---------------------------------------------------------------------------
-
 class CabReciboEgresoSerializer(serializers.ModelSerializer):
-    tipo_egreso_desc  = serializers.CharField(
+    tipo_egreso_desc = serializers.CharField(
         source='ch_codi_tipo_egreso.vc_desc_tipo_egreso', read_only=True)
-    proveedor_desc    = serializers.CharField(
+    proveedor_desc   = serializers.CharField(
         source='ch_codi_proveedor.vc_razo_soci_prov',     read_only=True)
 
     class Meta:

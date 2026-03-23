@@ -9,6 +9,9 @@ import Choferes    from './pages/maestros/Choferes';
 import Vehiculos   from './pages/maestros/Vehiculos';
 import TipoVehiculo from './pages/maestros/TipoVehiculo';
 import Proveedores from './pages/maestros/Proveedores';
+import TipoEgreso from './pages/maestros/TipoEgreso';
+import TipoIngreso from './pages/maestros/TipoIngreso';
+import TipoIncidente from './pages/maestros/TipoIncidente';
 
 // Movimientos
 import Tickets        from './pages/movimientos/Tickets';
@@ -52,21 +55,25 @@ export default function App() {
           <Route path="/maestros/vehiculos"     element={<PR><Vehiculos /></PR>} />
           <Route path="/maestros/tipo-vehiculo" element={<PR><TipoVehiculo /></PR>} />
           <Route path="/maestros/proveedores"   element={<PR><Proveedores /></PR>} />
+          <Route path="/maestros/tipo-egreso"   element={<PR><TipoEgreso /></PR>} />
+          <Route path="/maestros/tipo-ingreso"  element={<PR><TipoIngreso /></PR>} />
+          <Route path="/maestros/tipo-incidente" element={<PR><TipoIncidente /></PR>} />
 
           {/* Movimientos */}
-          <Route path="/movimientos/tickets"          element={<PR><Tickets /></PR>} />
-          <Route path="/movimientos/cobranza-credito" element={<PR><CobranzaCredito /></PR>} />
-          <Route path="/movimientos/recibos-egreso"   element={<PR><RecibosEgreso /></PR>} />
+          <Route path="/movimientos/tickets"                  element={<PR><Tickets /></PR>} />
+          <Route path="/movimientos/cobranza-credito"         element={<PR><CobranzaCredito /></PR>} />
+          <Route path="/movimientos/consulta-ticket-credito"   element={<PR><CobranzaCredito /></PR>} />
+          <Route path="/movimientos/recibos-egreso"           element={<PR><RecibosEgreso /></PR>} />
           <Route path="/movimientos/recibos-ingreso"  element={<PR><RecibosIngreso /></PR>} />
           <Route path="/movimientos/tarifario"    element={<PR><Tarifario /></PR>} />
-          <Route path="/movimientos/cierre-turno" element={<PR><CierreTurno /></PR>} />
+          <Route path="/movimientos/cierre-turno"             element={<PR><CierreTurno /></PR>} />
+          <Route path="/movimientos/consulta-ingreso-diario"  element={<PR><IngresoDiario /></PR>} />
 
           {/* Reportes */}
           <Route path="/reportes/ticket-salida" element={<PR><TicketSalida /></PR>} />
           <Route path="/reportes/comprobantes"    element={<PR><ComprobantesVenta /></PR>} />
           <Route path="/reportes/cobranza-diaria" element={<PR><CobranzaDiaria /></PR>} />
           <Route path="/reportes/ingreso-egreso"  element={<PR><IngresoEgresoMes /></PR>} />
-          <Route path="/reportes/ingreso-diario"  element={<PR><IngresoDiario /></PR>} />
 
           {/* Redirecciones */}
           <Route path="/" element={<Navigate to="/maestros/clientes" />} />

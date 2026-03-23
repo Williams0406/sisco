@@ -4,14 +4,14 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 
 from .models import (
     MaeCliente, MaeChofer, MaeTipoVehiculo, MaeVehiculo, MaeProveedor,
-    MaeTipoEgreso, MaeTipoIngreso, MaeTipoDocumento, MaeGarita,
+    MaeTipoEgreso, MaeTipoIngreso, MaeTipoIncidente, MaeTipoDocumento, MaeGarita,
     MaeUsuario, MaePerfil,
 )
 from .serializers import (
     MaeClienteSerializer, MaeChoferSerializer, MaeTipoVehiculoSerializer,
     MaeVehiculoSerializer, MaeProveedorSerializer, MaeTipoEgresoSerializer,
-    MaeTipoIngresoSerializer, MaeTipoDocumentoSerializer, MaeGaritaSerializer,
-    MaeUsuarioSerializer, MaePerfilSerializer,
+    MaeTipoIngresoSerializer, MaeTipoIncidenteSerializer, MaeTipoDocumentoSerializer,
+    MaeGaritaSerializer, MaeUsuarioSerializer, MaePerfilSerializer,
 )
 
 
@@ -70,6 +70,12 @@ class MaeTipoEgresoViewSet(viewsets.ModelViewSet):
 class MaeTipoIngresoViewSet(viewsets.ModelViewSet):
     queryset = MaeTipoIngreso.objects.all()
     serializer_class = MaeTipoIngresoSerializer
+    filterset_fields = ['ch_esta_activo']
+
+
+class MaeTipoIncidenteViewSet(viewsets.ModelViewSet):
+    queryset = MaeTipoIncidente.objects.all()
+    serializer_class = MaeTipoIncidenteSerializer
     filterset_fields = ['ch_esta_activo']
 
 

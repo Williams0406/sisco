@@ -38,7 +38,7 @@ class MaeSistema(models.Model):
     vc_desc_sistema = models.CharField(max_length=30, null=True, blank=True)
     ch_esta_sistema = models.CharField(max_length=1, null=True, blank=True)
     vc_desc_logo = models.CharField(max_length=50, null=True, blank=True)
-    ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_activo = models.BooleanField(null=True, blank=True)
 
     class Meta:
         db_table = 'MAE_SISTEMA'
@@ -152,7 +152,7 @@ class MaeUsuario(models.Model):
     vc_desc_apell_paterno = models.CharField(max_length=30, null=True, blank=True)
     vc_desc_apell_materno = models.CharField(max_length=30, null=True, blank=True)
     vc_desc_email_usuario = models.CharField(max_length=30, null=True, blank=True)
-    ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_activo = models.BooleanField(null=True, blank=True)
     vc_host_conexion = models.CharField(max_length=30, null=True, blank=True)
     ch_esta_conexion = models.CharField(max_length=1, null=True, blank=True)
     ch_pass_usua = models.CharField(max_length=10, null=True, blank=True)
@@ -219,7 +219,7 @@ class MaeGarita(models.Model):
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
     dt_fech_usua_regi = models.DateTimeField(null=True, blank=True)
     dt_fech_usua_modi = models.DateTimeField(null=True, blank=True)
-    ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_activo = models.BooleanField(null=True, blank=True)
 
     class Meta:
         db_table = 'MAE_GARITA'
@@ -250,7 +250,7 @@ class MaeGaritaXUsuario(models.Model):
         to_field='ch_codi_usuario',
         related_name='garitas',
     )
-    ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_activo = models.BooleanField(null=True, blank=True)
     ch_codi_usua_regi = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
     dt_fech_usua_regi = models.DateTimeField(null=True, blank=True)
@@ -272,8 +272,8 @@ class MaeCliente(models.Model):
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
     dt_fech_usua_regi = models.DateTimeField(null=True, blank=True)
     dt_fech_usua_modi = models.DateTimeField(null=True, blank=True)
-    ch_esta_cliente_vip = models.CharField(max_length=1, null=True, blank=True)
-    ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_cliente_vip = models.BooleanField(null=True, blank=True)
+    ch_esta_activo = models.BooleanField(null=True, blank=True)
     ch_esta_tarifa_unica = models.CharField(max_length=1, null=True, blank=True)
     nu_impo_tarifa = models.DecimalField(max_digits=13, decimal_places=3, null=True, blank=True)
 
@@ -295,7 +295,7 @@ class MaeChofer(models.Model):
     dt_fech_usua_regi = models.DateTimeField(null=True, blank=True)
     dt_fech_usua_modi = models.DateTimeField(null=True, blank=True)
     vc_dire_chofer = models.CharField(max_length=100, null=True, blank=True)
-    ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_activo = models.BooleanField(null=True, blank=True)
     ch_nume_dni = models.CharField(max_length=15, null=True, blank=True)
 
     class Meta:
@@ -314,7 +314,7 @@ class MaeTipoVehiculo(models.Model):
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
     dt_fech_usua_regi = models.DateTimeField(null=True, blank=True)
     dt_fech_usua_modi = models.DateTimeField(null=True, blank=True)
-    ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_activo = models.BooleanField(null=True, blank=True)
 
     class Meta:
         db_table = 'MAE_TIPO_VEHICULO'
@@ -363,8 +363,8 @@ class MaeVehiculo(models.Model):
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
     dt_fech_usua_regi = models.DateTimeField(null=True, blank=True)
     dt_fech_usua_modi = models.DateTimeField(null=True, blank=True)
-    ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
-    ch_esta_parqueado = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_activo = models.BooleanField(null=True, blank=True)
+    ch_esta_parqueado = models.BooleanField(null=True, blank=True)
     nu_impo_alquiler = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
 
     class Meta:
@@ -383,7 +383,7 @@ class MaeTipoIncidente(models.Model):
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
     dt_fech_usua_regi = models.DateTimeField(null=True, blank=True)
     dt_fech_usua_modi = models.DateTimeField(null=True, blank=True)
-    ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_activo = models.BooleanField(null=True, blank=True)
 
     class Meta:
         db_table = 'MAE_TIPO_INCIDENTE'
@@ -401,7 +401,7 @@ class MaeTipoEgreso(models.Model):
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
     dt_fech_usua_regi = models.DateTimeField(null=True, blank=True)
     dt_fech_usua_modi = models.DateTimeField(null=True, blank=True)
-    ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_activo = models.BooleanField(null=True, blank=True)
 
     class Meta:
         db_table = 'MAE_TIPO_EGRESO'
@@ -415,7 +415,7 @@ class MaeTipoIngreso(models.Model):
     """Categoría de ingreso de caja."""
     ch_codi_tipo_ingreso = models.CharField(max_length=3, primary_key=True)
     vc_desc_tipo_ingreso = models.CharField(max_length=50, null=True, blank=True)
-    ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_activo = models.BooleanField(null=True, blank=True)
     ch_codi_usua_regi = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
     dt_fech_usua_regi = models.DateTimeField(null=True, blank=True)
@@ -433,7 +433,7 @@ class MaeTipoDocumento(models.Model):
     """Tipo de documento fiscal/comercial (boleta, factura, etc.)."""
     ch_codi_tipo_dcmnt = models.CharField(max_length=2, primary_key=True)
     vc_desc_tipo_dcmnt = models.CharField(max_length=30, null=True, blank=True)
-    ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_activo = models.BooleanField(null=True, blank=True)
     ch_codi_usua_regi = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
     dt_fech_usua_regi = models.DateTimeField(null=True, blank=True)
@@ -464,7 +464,7 @@ class MaeCorrelativo(models.Model):
     )
     ch_seri_actual = models.CharField(max_length=4, null=True, blank=True)
     ch_nume_actual = models.CharField(max_length=10, null=True, blank=True)
-    ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_activo = models.BooleanField(null=True, blank=True)
     ch_codi_usua_regi = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
     dt_fech_usua_regi = models.DateTimeField(null=True, blank=True)
@@ -481,7 +481,7 @@ class MaeProveedor(models.Model):
     vc_razo_soci_prov = models.CharField(max_length=100, null=True, blank=True)
     ch_ruc_prov = models.CharField(max_length=11, null=True, blank=True)
     vc_dire_prov = models.CharField(max_length=100, null=True, blank=True)
-    ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_activo = models.BooleanField(null=True, blank=True)
     ch_codi_usua_regi = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
     dt_fech_usua_modi = models.DateTimeField(null=True, blank=True)
@@ -500,7 +500,7 @@ class MaeVariable(models.Model):
     ch_codi_variable = models.CharField(max_length=2, primary_key=True)
     vc_desc_variable = models.CharField(max_length=70, null=True, blank=True)
     nu_nume_valor = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
+    ch_esta_activo = models.BooleanField(null=True, blank=True)
     dt_fech_ulti_actu = models.DateTimeField(null=True, blank=True)
     ch_codi_usua = models.CharField(max_length=15, null=True, blank=True)
     ch_valo_variable = models.CharField(max_length=10, null=True, blank=True)

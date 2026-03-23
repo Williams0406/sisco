@@ -13,7 +13,7 @@ export default function FormModal({ title, fields, values, onChange, onSave, onC
               {field.type === 'select' ? (
                 <select
                   style={styles.input}
-                  value={values[field.key] || ''}
+                  value={values[field.key] ?? ''}
                   onChange={(e) => onChange(field.key, e.target.value)}
                 >
                   <option value="">— Seleccionar —</option>
@@ -25,7 +25,7 @@ export default function FormModal({ title, fields, values, onChange, onSave, onC
                 <input
                   style={styles.input}
                   type={field.type || 'text'}
-                  value={values[field.key] || ''}
+                  value={values[field.key] ?? ''}
                   onChange={(e) => onChange(field.key, e.target.value)}
                   placeholder={field.placeholder || ''}
                   readOnly={field.readOnly}
