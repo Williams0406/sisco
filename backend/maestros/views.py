@@ -1,6 +1,7 @@
 from rest_framework import viewsets
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
+from seguridad.permissions import IsAdministrador
 
 from .models import (
     MaeCliente, MaeChofer, MaeTipoVehiculo, MaeVehiculo, MaeProveedor,
@@ -94,12 +95,14 @@ class MaeGaritaViewSet(viewsets.ModelViewSet):
 class MaeUsuarioViewSet(viewsets.ModelViewSet):
     queryset = MaeUsuario.objects.all()
     serializer_class = MaeUsuarioSerializer
+    permission_classes = [IsAdministrador]
     filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_fields = ['ch_esta_activo', 'ch_tipo_usuario']
     search_fields = ['vc_desc_nomb_usuario', 'ch_codi_usuario', 'vc_desc_email_usuario']
 
 
-class MaePerfilViewSet(viewsets.ModelViewSet):
+class MaePerfilViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = MaePerfil.objects.all()
     serializer_class = MaePerfilSerializer
+    permission_classes = [IsAdministrador]
     filterset_fields = ['ch_esta_perfil']

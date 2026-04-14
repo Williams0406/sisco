@@ -1,6 +1,6 @@
 from rest_framework.routers import DefaultRouter
 from django.urls import path
-from .views import UsuarioViewSet, PerfilViewSet, PerfilUsuarioViewSet, MeView
+from .views import UsuarioViewSet, PerfilViewSet, PerfilUsuarioViewSet, MeView, CajeroOptionsView
 
 router = DefaultRouter()
 router.register(r'usuarios',        UsuarioViewSet,       basename='seg-usuario')
@@ -9,4 +9,5 @@ router.register(r'perfil-usuario',  PerfilUsuarioViewSet, basename='perfil-usuar
 
 urlpatterns = [
     path('me/', MeView.as_view()),
+    path('cajeros/', CajeroOptionsView.as_view()),
 ] + router.urls

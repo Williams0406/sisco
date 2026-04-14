@@ -7,12 +7,12 @@ import django_filters
 from django.utils import timezone
 
 from .models import (
-    DetTarifario, MovTicket,
+    DetTarifario, ConfiguracionTurno, MovTicket,
     CabCobranzaCredito, DetCobranzaCredito, CabDocumentoVenta,
     CabCierreTurno, CabReciboEgreso, CabReciboIngreso,
 )
 from .serializers import (
-    DetTarifarioSerializer,
+    DetTarifarioSerializer, ConfiguracionTurnoSerializer,
     MovTicketSerializer, MovTicketListSerializer,
     CabCobranzaCreditoSerializer, CabCobranzaCreditoListSerializer,
     DetCobranzaCreditoSerializer, CabDocumentoVentaSerializer,
@@ -36,7 +36,7 @@ class TicketFilter(django_filters.FilterSet):
         fields = [
             'ch_esta_ticket', 'ch_tipo_comprobante',
             'ch_codi_garita', 'ch_codi_cliente',
-            'ch_codi_turno_caja', 'ch_esta_activo',
+            'ch_codi_turno_caja', 'ch_esta_activo', 'ch_esta_cancelado',
             'fecha_desde', 'fecha_hasta',
         ]
 
@@ -89,6 +89,12 @@ class DetTarifarioViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_fields = ['ch_esta_activo', 'ch_tipo_vehiculo', 'ch_codi_cliente']
     ordering = ['ch_tipo_vehiculo']
+
+
+class ConfiguracionTurnoViewSet(viewsets.ModelViewSet):
+    queryset = ConfiguracionTurno.objects.all().order_by('nu_codi_config_turno')
+    serializer_class = ConfiguracionTurnoSerializer
+    http_method_names = ['get', 'post', 'put', 'patch']
 
 
 class MovTicketViewSet(viewsets.ModelViewSet):

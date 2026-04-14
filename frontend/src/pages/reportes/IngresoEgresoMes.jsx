@@ -1,183 +1,233 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import api from '../../api/axios';
-import DataTable from '../../components/DataTable';
+import { theme } from '../../styles/tokens';
 
-const COLUMNS_INGRESO = [
-  { key: 'nu_codi_recibo',    label: '# Recibo' },
-  { key: 'dt_fech_ingr',      label: 'Fecha',
-    render: (v) => v ? new Date(v).toLocaleDateString('es-PE') : '—' },
-  { key: 'tipo_ingreso_desc', label: 'Tipo' },
-  { key: 'cliente_desc',      label: 'Cliente' },
-  { key: 'nu_impo_ingr',      label: 'Importe',
-    render: (v) => v ? `S/ ${parseFloat(v).toFixed(2)}` : '—' },
+const MONTHS = [
+  { key: 0, label: 'Enero' },
+  { key: 1, label: 'Febrero' },
+  { key: 2, label: 'Marzo' },
+  { key: 3, label: 'Abril' },
+  { key: 4, label: 'Mayo' },
+  { key: 5, label: 'Junio' },
+  { key: 6, label: 'Julio' },
+  { key: 7, label: 'Agosto' },
+  { key: 8, label: 'Septiembre' },
+  { key: 9, label: 'Octubre' },
+  { key: 10, label: 'Noviembre' },
+  { key: 11, label: 'Diciembre' },
 ];
 
-const COLUMNS_EGRESO = [
-  { key: 'nu_codi_recibo',   label: '# Recibo' },
-  { key: 'dt_fech_egre',     label: 'Fecha',
-    render: (v) => v ? new Date(v).toLocaleDateString('es-PE') : '—' },
-  { key: 'tipo_egreso_desc', label: 'Tipo' },
-  { key: 'proveedor_desc',   label: 'Proveedor' },
-  { key: 'nu_impo_egre',     label: 'Importe',
-    render: (v) => v ? `S/ ${parseFloat(v).toFixed(2)}` : '—' },
-];
+const formatMoney = (value) => {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? `S/ ${amount.toFixed(2)}` : 'S/ 0.00';
+};
 
-const MESES = [
-  { value: '1', label: 'Enero' },   { value: '2',  label: 'Febrero' },
-  { value: '3', label: 'Marzo' },   { value: '4',  label: 'Abril' },
-  { value: '5', label: 'Mayo' },    { value: '6',  label: 'Junio' },
-  { value: '7', label: 'Julio' },   { value: '8',  label: 'Agosto' },
-  { value: '9', label: 'Septiembre' }, { value: '10', label: 'Octubre' },
-  { value: '11', label: 'Noviembre' }, { value: '12', label: 'Diciembre' },
-];
+const emptyMonths = () => Array(12).fill(0);
+const normalizeList = (payload) => payload?.results || payload || [];
+
+const parseDateParts = (value) => {
+  if (!value || typeof value !== 'string') return null;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  return {
+    year: match[1],
+    monthIndex: Number(match[2]) - 1,
+    day: match[3],
+  };
+};
 
 export default function IngresoEgresoMes() {
   const anioActual = new Date().getFullYear();
-  const mesActual  = String(new Date().getMonth() + 1);
+  const [loading, setLoading] = useState(false);
+  const [cierres, setCierres] = useState([]);
+  const [anio, setAnio] = useState(String(anioActual));
 
-  const [ingresos, setIngresos]   = useState([]);
-  const [egresos, setEgresos]     = useState([]);
-  const [loading, setLoading]     = useState(false);
-  const [resumen, setResumen]     = useState(null);
-  const [tab, setTab]             = useState('ingresos');
-  const [filtros, setFiltros]     = useState({
-    anio: String(anioActual), mes: mesActual, garita: '',
-  });
+  const anios = Array.from({ length: 8 }, (_, i) => String(anioActual - i));
 
   const handleBuscar = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (filtros.anio)   params.append('anio',   filtros.anio);
-      if (filtros.mes)    params.append('mes',    filtros.mes);
-      if (filtros.garita) params.append('garita', filtros.garita);
-      const res = await api.get(`/reportes/ingreso-egreso-mes/?${params}`);
-      setIngresos(res.data.ingresos  || []);
-      setEgresos(res.data.egresos    || []);
-      setResumen({
-        total_ingresos: res.data.total_ingresos,
-        total_egresos:  res.data.total_egresos,
-        utilidad:       res.data.utilidad,
-      });
-    } finally { setLoading(false); }
+      const res = await api.get('/movimientos/cierres-turno/?page_size=2000&ch_esta_activo=1');
+      setCierres(normalizeList(res.data));
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const set = (k, v) => setFiltros(p => ({ ...p, [k]: v }));
+  useEffect(() => {
+    handleBuscar();
+  }, []);
 
-  const anios = Array.from({ length: 5 }, (_, i) => String(anioActual - i));
+  const rows = useMemo(() => {
+    const ingresoMonths = emptyMonths();
+    const egresoMonths = emptyMonths();
+    const otroIngresoMonths = emptyMonths();
+    const cobranzaMonths = emptyMonths();
+
+    cierres.forEach((item) => {
+      const parts = parseDateParts(item.dt_fech_turno);
+      if (!parts || parts.year !== anio || parts.monthIndex < 0 || parts.monthIndex > 11) return;
+
+      const monthIndex = parts.monthIndex;
+      ingresoMonths[monthIndex] += Number(item.nu_impo_tota_ingr || 0);
+      egresoMonths[monthIndex] += Number(item.nu_impo_egre || 0);
+      otroIngresoMonths[monthIndex] += Number(item.nu_impo_otro_ingr || 0);
+      cobranzaMonths[monthIndex] += Number(item.nu_impo_cobr_cred || 0);
+    });
+
+    const totalMonths = emptyMonths().map((_, index) =>
+      ingresoMonths[index] + otroIngresoMonths[index] + cobranzaMonths[index] - egresoMonths[index],
+    );
+
+    return [
+      {
+        nro: 1,
+        concepto: 'Ingreso',
+        months: ingresoMonths,
+        total: ingresoMonths.reduce((sum, value) => sum + value, 0),
+      },
+      {
+        nro: 2,
+        concepto: 'Egreso',
+        months: egresoMonths,
+        total: egresoMonths.reduce((sum, value) => sum + value, 0),
+      },
+      {
+        nro: 3,
+        concepto: 'Otro ingreso',
+        months: otroIngresoMonths,
+        total: otroIngresoMonths.reduce((sum, value) => sum + value, 0),
+      },
+      {
+        nro: 4,
+        concepto: 'Cobranza Credito',
+        months: cobranzaMonths,
+        total: cobranzaMonths.reduce((sum, value) => sum + value, 0),
+      },
+      {
+        nro: '',
+        concepto: 'Total',
+        months: totalMonths,
+        total: totalMonths.reduce((sum, value) => sum + value, 0),
+        isTotal: true,
+      },
+    ];
+  }, [cierres, anio]);
+
+  const totalAnual = useMemo(() => rows.find((row) => row.isTotal)?.total || 0, [rows]);
 
   return (
-    <div>
-      {/* Filtros */}
-      <div style={styles.card}>
-        <h3 style={styles.cardTitle}>🔍 Filtros — Ingresos y Egresos por Mes</h3>
-        <div style={styles.row}>
-          <div style={styles.col}>
-            <label style={styles.label}>Año</label>
-            <select style={styles.input} value={filtros.anio}
-              onChange={e => set('anio', e.target.value)}>
-              {anios.map(a => <option key={a} value={a}>{a}</option>)}
-            </select>
-          </div>
-          <div style={styles.col}>
-            <label style={styles.label}>Mes</label>
-            <select style={styles.input} value={filtros.mes}
-              onChange={e => set('mes', e.target.value)}>
-              <option value="">— Todos —</option>
-              {MESES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-            </select>
-          </div>
-          <div style={styles.col}>
-            <label style={styles.label}>&nbsp;</label>
-            <button style={styles.btnBuscar} onClick={handleBuscar}>
-              🔍 Generar Reporte
-            </button>
-          </div>
+    <div style={styles.page}>
+      <section style={styles.heroCard}>
+        <div>
+          <p style={styles.eyebrow}>Reporte financiero</p>
+          <h1 style={styles.title}>Ingresos y egresos mensuales</h1>
+          <p style={styles.subtitle}>
+            Resumen anual basado en CabCierreTurno con los conceptos operativos del cierre y una fila total por mes.
+          </p>
         </div>
 
-        {/* Tarjetas de resumen */}
-        {resumen && (
-          <div style={styles.totalesRow}>
-            <div style={{ ...styles.totalBox, background: '#059669' }}>
-              <span style={{ ...styles.totalLabel, color: '#a7f3d0' }}>Total Ingresos</span>
-              <span style={{ ...styles.totalValor, color: '#fff' }}>
-                S/ {parseFloat(resumen.total_ingresos || 0).toFixed(2)}
-              </span>
-            </div>
-            <div style={{ ...styles.totalBox, background: '#dc2626' }}>
-              <span style={{ ...styles.totalLabel, color: '#fecaca' }}>Total Egresos</span>
-              <span style={{ ...styles.totalValor, color: '#fff' }}>
-                S/ {parseFloat(resumen.total_egresos || 0).toFixed(2)}
-              </span>
-            </div>
-            <div style={{
-              ...styles.totalBox,
-              background: resumen.utilidad >= 0 ? '#2563eb' : '#7c3aed',
-            }}>
-              <span style={{ ...styles.totalLabel, color: '#bfdbfe' }}>Utilidad Neta</span>
-              <span style={{ ...styles.totalValor, color: '#fff' }}>
-                S/ {parseFloat(resumen.utilidad || 0).toFixed(2)}
-              </span>
-            </div>
+        <div style={styles.filters}>
+          <div style={styles.filterGroup}>
+            <label style={styles.label}>Ano</label>
+            <select style={styles.input} value={anio} onChange={(e) => setAnio(e.target.value)}>
+              {anios.map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
           </div>
-        )}
-      </div>
+        </div>
+      </section>
 
-      {/* Tabs Ingresos / Egresos */}
-      {(ingresos.length > 0 || egresos.length > 0) && (
-        <>
-          <div style={styles.tabs}>
-            <button
-              style={{ ...styles.tab, ...(tab === 'ingresos' ? styles.tabActive : {}) }}
-              onClick={() => setTab('ingresos')}>
-              💰 Ingresos ({ingresos.length})
-            </button>
-            <button
-              style={{ ...styles.tab, ...(tab === 'egresos' ? styles.tabActive : {}) }}
-              onClick={() => setTab('egresos')}>
-              💸 Egresos ({egresos.length})
-            </button>
+      <section style={styles.metricsGrid}>
+        <MetricCard label="Conceptos" value={String(rows.filter((row) => !row.isTotal).length)} />
+        <MetricCard label="Total anual" value={formatMoney(totalAnual)} highlight />
+      </section>
+
+      <section style={styles.tableCard}>
+        <div style={styles.tableHeader}>
+          <div>
+            <h2 style={styles.tableTitle}>Detalle mensual</h2>
+            <p style={styles.tableSubtitle}>
+              Las columnas de enero a diciembre consolidan los montos de CabCierreTurno segun el mes de dt_fech_turno.
+            </p>
           </div>
+          <span style={styles.counter}>{rows.length} registro(s)</span>
+        </div>
 
-          {tab === 'ingresos' && (
-            <DataTable
-              title="Detalle de Ingresos"
-              columns={COLUMNS_INGRESO}
-              data={ingresos}
-              loading={loading}
-            />
-          )}
-          {tab === 'egresos' && (
-            <DataTable
-              title="Detalle de Egresos"
-              columns={COLUMNS_EGRESO}
-              data={egresos}
-              loading={loading}
-            />
-          )}
-        </>
-      )}
+        <div style={styles.tableWrapper}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>N°</th>
+                <th style={styles.th}>Concepto</th>
+                {MONTHS.map((month) => (
+                  <th key={month.key} style={styles.th}>{month.label}</th>
+                ))}
+                <th style={styles.th}>TOTAL</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && <tr><td colSpan={15} style={styles.empty}>Cargando datos...</td></tr>}
+              {!loading && rows.length === 0 && <tr><td colSpan={15} style={styles.empty}>No hay datos para el ano seleccionado.</td></tr>}
+              {!loading && rows.map((row, index) => (
+                <tr key={`${row.concepto}-${index}`} style={row.isTotal ? styles.totalRow : (index % 2 !== 0 ? styles.trOdd : undefined)}>
+                  <td style={styles.td}>{row.nro || '-'}</td>
+                  <td style={{ ...styles.td, ...(row.isTotal ? styles.totalConcept : {}) }}>{row.concepto}</td>
+                  {row.months.map((value, monthIndex) => (
+                    <td key={`${row.concepto}-${monthIndex}`} style={{ ...styles.td, ...styles.amountCell }}>
+                      {formatMoney(value)}
+                    </td>
+                  ))}
+                  <td style={{ ...styles.td, ...styles.amountCell, ...styles.totalConcept }}>{formatMoney(row.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, highlight = false }) {
+  return (
+    <div style={{ ...styles.metricCard, ...(highlight ? styles.metricCardHighlight : {}) }}>
+      <span style={{ ...styles.metricLabel, ...(highlight ? styles.metricLabelHighlight : {}) }}>{label}</span>
+      <strong style={{ ...styles.metricValue, ...(highlight ? styles.metricValueHighlight : {}) }}>{value}</strong>
     </div>
   );
 }
 
 const styles = {
-  card: { background: '#fff', borderRadius: 10, padding: '18px 24px',
-    marginBottom: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.08)' },
-  cardTitle: { margin: '0 0 16px', fontSize: 15, color: '#1f2937' },
-  row: { display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' },
-  col: { display: 'flex', flexDirection: 'column', gap: 4 },
-  label: { fontSize: 12, fontWeight: 600, color: '#374151' },
-  input: { padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 },
-  btnBuscar: { padding: '8px 20px', background: '#2563eb', color: '#fff',
-    border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600 },
-  totalesRow: { display: 'flex', gap: 12, marginTop: 16, flexWrap: 'wrap' },
-  totalBox: { background: '#f3f4f6', borderRadius: 8, padding: '12px 24px',
-    display: 'flex', flexDirection: 'column', minWidth: 160 },
-  totalLabel: { fontSize: 11, color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' },
-  totalValor: { fontSize: 22, fontWeight: 700, color: '#1f2937', marginTop: 2 },
-  tabs: { display: 'flex', gap: 8, marginBottom: 12 },
-  tab: { padding: '8px 20px', border: '1px solid #d1d5db', borderRadius: 6,
-    cursor: 'pointer', background: '#fff', fontSize: 13, fontWeight: 600, color: '#6b7280' },
-  tabActive: { background: '#2563eb', color: '#fff', border: '1px solid #2563eb' },
+  page: { display: 'flex', flexDirection: 'column', gap: 18 },
+  heroCard: { background: theme.colors.panel, borderRadius: theme.radius.lg, border: `1px solid ${theme.colors.border}`, boxShadow: theme.shadow.card, padding: 22, display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' },
+  eyebrow: { margin: 0, color: theme.colors.textSoft, fontSize: theme.typography.small, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 800 },
+  title: { margin: '6px 0 0', fontSize: 26, fontWeight: 900, color: theme.colors.text },
+  subtitle: { margin: '8px 0 0', fontSize: theme.typography.body, color: theme.colors.textMuted, maxWidth: 720 },
+  filters: { display: 'flex', gap: 12, alignItems: 'end', flexWrap: 'wrap' },
+  filterGroup: { display: 'flex', flexDirection: 'column', gap: 6 },
+  label: { fontSize: theme.typography.label, fontWeight: 700, color: theme.colors.textMuted },
+  input: { minWidth: 150, padding: '10px 12px', border: `1px solid ${theme.colors.borderStrong}`, borderRadius: theme.radius.sm, fontSize: theme.typography.body, background: theme.colors.panel, color: theme.colors.text, outline: 'none' },
+  metricsGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 },
+  metricCard: { background: theme.colors.panel, borderRadius: theme.radius.md, border: `1px solid ${theme.colors.border}`, boxShadow: theme.shadow.card, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 6 },
+  metricCardHighlight: { background: theme.colors.brandTint, borderColor: '#bfdbfe' },
+  metricLabel: { color: theme.colors.textMuted, fontSize: theme.typography.small, textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 700 },
+  metricLabelHighlight: { color: theme.colors.brandDark },
+  metricValue: { color: theme.colors.text, fontSize: 24, fontWeight: 800 },
+  metricValueHighlight: { color: theme.colors.brandDark },
+  tableCard: { background: theme.colors.panel, borderRadius: theme.radius.lg, border: `1px solid ${theme.colors.border}`, boxShadow: theme.shadow.card, padding: 20 },
+  tableHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 16 },
+  tableTitle: { margin: 0, fontSize: 20, color: theme.colors.text, fontWeight: 800 },
+  tableSubtitle: { margin: '6px 0 0', color: theme.colors.textMuted, fontSize: theme.typography.body },
+  counter: { background: theme.colors.panelMuted, color: theme.colors.textMuted, border: `1px solid ${theme.colors.border}`, padding: '8px 12px', borderRadius: theme.radius.pill, fontSize: theme.typography.small, fontWeight: 700, whiteSpace: 'nowrap' },
+  tableWrapper: { overflow: 'auto', border: `1px solid ${theme.colors.border}`, borderRadius: theme.radius.md },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: theme.typography.body },
+  th: { background: theme.colors.panelMuted, padding: '12px 14px', textAlign: 'left', borderBottom: `1px solid ${theme.colors.border}`, color: theme.colors.textMuted, fontWeight: 700, whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: 0.4, fontSize: theme.typography.small },
+  td: { padding: '12px 14px', borderBottom: '1px solid #edf2f7', color: theme.colors.text, whiteSpace: 'nowrap' },
+  trOdd: { background: '#fbfdff' },
+  totalRow: { background: theme.colors.brandTint },
+  totalConcept: { fontWeight: 800, color: theme.colors.brandDark },
+  amountCell: { textAlign: 'right', fontWeight: 700 },
+  empty: { textAlign: 'center', padding: 28, color: theme.colors.textMuted },
 };

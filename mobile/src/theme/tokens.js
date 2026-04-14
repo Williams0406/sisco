@@ -1,0 +1,27 @@
+export const theme = {
+  colors: {
+    appBg: '#edf3f8',
+    panel: '#ffffff',
+    panelMuted: '#f6f9fc',
+    border: '#d8e2ef',
+    text: '#10233a',
+    textMuted: '#5f7287',
+    textSoft: '#8fa1b5',
+    brand: '#0f4c81',
+    brandStrong: '#123d66',
+    brandTint: '#dceeff',
+    success: '#15803d',
+    successTint: '#dcfce7',
+    warning: '#b45309',
+    warningTint: '#ffedd5',
+    danger: '#c2410c',
+    dangerTint: '#fee2e2',
+    ink: '#08111f',
+  },
+  radius: {
+    sm: 14,
+    md: 18,
+    lg: 24,
+    pill: 999,
+  },
+};

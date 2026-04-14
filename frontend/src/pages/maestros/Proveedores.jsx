@@ -1,80 +1,126 @@
 import { useEffect, useState } from 'react';
 import api from '../../api/axios';
-import DataTable from '../../components/DataTable';
-import FormModal from '../../components/FormModal';
+import MasterSplitView from './MasterSplitView';
 import { isTrueValue, toBooleanOrNull } from './booleanUtils';
 
-const COLUMNS = [
-  { key: 'ch_codi_proveedor', label: 'Código' },
+const createEmptyForm = () => ({
+  ch_codi_proveedor: '',
+  ch_ruc_prov: '',
+  vc_razo_soci_prov: '',
+  vc_dire_prov: '',
+  ch_esta_activo: 'true',
+});
+
+const columns = [
+  { key: 'ch_codi_proveedor', label: 'Codigo' },
   { key: 'ch_ruc_prov', label: 'RUC' },
-  { key: 'vc_razo_soci_prov', label: 'Razón Social' },
-  { key: 'vc_dire_prov', label: 'Dirección' },
-  { key: 'ch_esta_activo', label: 'Estado', render: (v) => isTrueValue(v) ? '✅ Activo' : '❌ Inactivo' },
+  { key: 'vc_razo_soci_prov', label: 'Razon social' },
+  { key: 'vc_dire_prov', label: 'Direccion' },
+  { key: 'ch_esta_activo', label: 'Estado', render: (value) => (isTrueValue(value) ? 'Activo' : 'Inactivo') },
 ];
 
-const FIELDS = [
-  { key: 'ch_codi_proveedor', label: 'Código', placeholder: 'Ej: P001' },
-  { key: 'ch_ruc_prov', label: 'RUC', placeholder: '11 dígitos' },
-  { key: 'vc_razo_soci_prov', label: 'Razón Social' },
-  { key: 'vc_dire_prov', label: 'Dirección' },
-  { key: 'ch_esta_activo', label: 'Estado', type: 'select', options: [{ value: 'true', label: 'Activo' }, { value: 'false', label: 'Inactivo' }] },
+const fields = [
+  { key: 'ch_codi_proveedor', label: 'Codigo', readOnly: true, placeholder: 'Generado automaticamente' },
+  { key: 'ch_ruc_prov', label: 'RUC', placeholder: '11 digitos' },
+  { key: 'vc_razo_soci_prov', label: 'Razon social', placeholder: 'Proveedor o empresa' },
+  { key: 'vc_dire_prov', label: 'Direccion', placeholder: 'Direccion fiscal' },
+  {
+    key: 'ch_esta_activo',
+    label: 'Estado',
+    type: 'select',
+    options: [
+      { value: 'true', label: 'Activo' },
+      { value: 'false', label: 'Inactivo' },
+    ],
+  },
 ];
-
-const normalizeForm = (payload) => ({ ...payload, ch_esta_activo: toBooleanOrNull(payload.ch_esta_activo) });
 
 export default function Proveedores() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(false);
-  const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState(createEmptyForm());
 
   const fetchData = async () => {
     setLoading(true);
     try {
       const res = await api.get('/maestros/proveedores/?page_size=200');
       setData(res.data.results || res.data);
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const handleNew = () => {
+    setEditId(null);
+    setForm(createEmptyForm());
+  };
+
+  const handleSelect = (row) => {
+    setEditId(row.ch_codi_proveedor);
+    setForm({
+      ch_codi_proveedor: row.ch_codi_proveedor ?? '',
+      ch_ruc_prov: row.ch_ruc_prov ?? '',
+      vc_razo_soci_prov: row.vc_razo_soci_prov ?? '',
+      vc_dire_prov: row.vc_dire_prov ?? '',
+      ch_esta_activo: isTrueValue(row.ch_esta_activo) ? 'true' : 'false',
+    });
+  };
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const payload = normalizeForm(form);
+      const payload = {
+        ...form,
+        ch_esta_activo: toBooleanOrNull(form.ch_esta_activo),
+      };
+
+      if (!editId) delete payload.ch_codi_proveedor;
+
       if (editId) await api.put(`/maestros/proveedores/${editId}/`, payload);
       else await api.post('/maestros/proveedores/', payload);
-      setModal(false);
-      fetchData();
+
+      await fetchData();
+      handleNew();
     } catch (err) {
-      alert('Error: ' + JSON.stringify(err.response?.data));
-    } finally { setSaving(false); }
+      alert(`Error al guardar: ${JSON.stringify(err.response?.data || err.message)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!editId) return;
+    if (!confirm(`Eliminar proveedor ${form.vc_razo_soci_prov || editId}?`)) return;
+    await api.delete(`/maestros/proveedores/${editId}/`);
+    await fetchData();
+    handleNew();
   };
 
   return (
-    <>
-      <DataTable title="Proveedores" columns={COLUMNS} data={data} loading={loading}
-        onNew={() => { setForm({}); setEditId(null); setModal(true); }}
-        onEdit={(row) => { setForm({ ...row }); setEditId(row.ch_codi_proveedor); setModal(true); }}
-        onDelete={async (row) => {
-          if (!confirm(`¿Eliminar proveedor ${row.vc_razo_soci_prov}?`)) return;
-          await api.delete(`/maestros/proveedores/${row.ch_codi_proveedor}/`);
-          fetchData();
-        }}
-      />
-      {modal && (
-        <FormModal
-          title={editId ? 'Editar Proveedor' : 'Nuevo Proveedor'}
-          fields={editId ? FIELDS.map((f) => (f.key === 'ch_codi_proveedor' ? { ...f, readOnly: true } : f)) : FIELDS}
-          values={form}
-          onChange={(k, v) => setForm((p) => ({ ...p, [k]: v }))}
-          onSave={handleSave}
-          onClose={() => setModal(false)}
-          loading={saving}
-        />
-      )}
-    </>
+    <MasterSplitView
+      title="Proveedores"
+      singularTitle="proveedor"
+      subtitle="Mantiene proveedores en una vista continua con tabla y formulario lateral."
+      columns={columns}
+      data={data}
+      loading={loading}
+      form={form}
+      fields={fields}
+      editId={editId}
+      saving={saving}
+      onChange={(key, value) => setForm((prev) => ({ ...prev, [key]: value }))}
+      onNew={handleNew}
+      onSelect={handleSelect}
+      onSave={handleSave}
+      onDelete={handleDelete}
+      getRowId={(row) => row.ch_codi_proveedor}
+      getRowTitle={() => 'proveedor'}
+    />
   );
 }

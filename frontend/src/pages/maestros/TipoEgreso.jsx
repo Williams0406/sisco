@@ -1,72 +1,118 @@
 import { useEffect, useState } from 'react';
 import api from '../../api/axios';
-import DataTable from '../../components/DataTable';
-import FormModal from '../../components/FormModal';
+import MasterSplitView from './MasterSplitView';
 import { isTrueValue, toBooleanOrNull } from './booleanUtils';
 
-const COLUMNS = [
-  { key: 'ch_codi_tipo_egreso', label: 'Código' },
-  { key: 'vc_desc_tipo_egreso', label: 'Descripción' },
-  { key: 'ch_esta_activo', label: 'Estado', render: (v) => isTrueValue(v) ? '✅ Activo' : '❌ Inactivo' },
+const createEmptyForm = () => ({
+  ch_codi_tipo_egreso: '',
+  vc_desc_tipo_egreso: '',
+  ch_esta_activo: 'true',
+});
+
+const columns = [
+  { key: 'ch_codi_tipo_egreso', label: 'Codigo' },
+  { key: 'vc_desc_tipo_egreso', label: 'Descripcion' },
+  { key: 'ch_esta_activo', label: 'Estado', render: (value) => (isTrueValue(value) ? 'Activo' : 'Inactivo') },
 ];
 
-const FIELDS = [
-  { key: 'ch_codi_tipo_egreso', label: 'Código', placeholder: 'Ej: E01' },
-  { key: 'vc_desc_tipo_egreso', label: 'Descripción' },
-  { key: 'ch_esta_activo', label: 'Estado', type: 'select', options: [{ value: 'true', label: 'Activo' }, { value: 'false', label: 'Inactivo' }] },
+const fields = [
+  { key: 'ch_codi_tipo_egreso', label: 'Codigo', readOnly: true, placeholder: 'Generado automaticamente' },
+  { key: 'vc_desc_tipo_egreso', label: 'Descripcion', placeholder: 'Concepto de egreso' },
+  {
+    key: 'ch_esta_activo',
+    label: 'Estado',
+    type: 'select',
+    options: [
+      { value: 'true', label: 'Activo' },
+      { value: 'false', label: 'Inactivo' },
+    ],
+  },
 ];
 
 export default function TipoEgreso() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(false);
-  const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState(createEmptyForm());
 
   const fetchData = async () => {
     setLoading(true);
     try {
       const res = await api.get('/maestros/tipo-egresos/?page_size=200');
       setData(res.data.results || res.data);
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const handleNew = () => {
+    setEditId(null);
+    setForm(createEmptyForm());
+  };
+
+  const handleSelect = (row) => {
+    setEditId(row.ch_codi_tipo_egreso);
+    setForm({
+      ch_codi_tipo_egreso: row.ch_codi_tipo_egreso ?? '',
+      vc_desc_tipo_egreso: row.vc_desc_tipo_egreso ?? '',
+      ch_esta_activo: isTrueValue(row.ch_esta_activo) ? 'true' : 'false',
+    });
+  };
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const payload = { ...form, ch_esta_activo: toBooleanOrNull(form.ch_esta_activo) };
+      const payload = {
+        ...form,
+        ch_esta_activo: toBooleanOrNull(form.ch_esta_activo),
+      };
+
+      if (!editId) delete payload.ch_codi_tipo_egreso;
+
       if (editId) await api.put(`/maestros/tipo-egresos/${editId}/`, payload);
       else await api.post('/maestros/tipo-egresos/', payload);
-      setModal(false);
-      fetchData();
-    } finally { setSaving(false); }
+
+      await fetchData();
+      handleNew();
+    } catch (err) {
+      alert(`Error al guardar: ${JSON.stringify(err.response?.data || err.message)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!editId) return;
+    if (!confirm(`Eliminar tipo de egreso ${form.vc_desc_tipo_egreso || editId}?`)) return;
+    await api.delete(`/maestros/tipo-egresos/${editId}/`);
+    await fetchData();
+    handleNew();
   };
 
   return (
-    <>
-      <DataTable title="Tipos de Egreso" columns={COLUMNS} data={data} loading={loading}
-        onNew={() => { setForm({}); setEditId(null); setModal(true); }}
-        onEdit={(row) => { setForm({ ...row }); setEditId(row.ch_codi_tipo_egreso); setModal(true); }}
-        onDelete={async (row) => {
-          if (!confirm(`¿Eliminar tipo de egreso ${row.vc_desc_tipo_egreso}?`)) return;
-          await api.delete(`/maestros/tipo-egresos/${row.ch_codi_tipo_egreso}/`);
-          fetchData();
-        }}
-      />
-      {modal && (
-        <FormModal
-          title={editId ? 'Editar Tipo Egreso' : 'Nuevo Tipo Egreso'}
-          fields={editId ? FIELDS.map((f) => (f.key === 'ch_codi_tipo_egreso' ? { ...f, readOnly: true } : f)) : FIELDS}
-          values={form}
-          onChange={(k, v) => setForm((p) => ({ ...p, [k]: v }))}
-          onSave={handleSave}
-          onClose={() => setModal(false)}
-          loading={saving}
-        />
-      )}
-    </>
+    <MasterSplitView
+      title="Tipos de egreso"
+      singularTitle="tipo de egreso"
+      subtitle="Define conceptos de egreso con un flujo mas directo y sin modales."
+      columns={columns}
+      data={data}
+      loading={loading}
+      form={form}
+      fields={fields}
+      editId={editId}
+      saving={saving}
+      onChange={(key, value) => setForm((prev) => ({ ...prev, [key]: value }))}
+      onNew={handleNew}
+      onSelect={handleSelect}
+      onSave={handleSave}
+      onDelete={handleDelete}
+      getRowId={(row) => row.ch_codi_tipo_egreso}
+      getRowTitle={() => 'tipo de egreso'}
+    />
   );
 }

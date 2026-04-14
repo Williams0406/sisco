@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 from django.db.models import Sum, Count
+from seguridad.permissions import IsAdministrador
 
 from movimientos.models import (
     MovTicket, CabDocumentoVenta,
@@ -15,7 +15,7 @@ from movimientos.serializers import (
 
 
 class ListaTicketSalidaView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdministrador]
 
     def get(self, request):
         qs = MovTicket.objects.select_related(
@@ -38,7 +38,7 @@ class ListaTicketSalidaView(APIView):
 
 
 class RelacionComprobanteVentaView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdministrador]
 
     def get(self, request):
         qs = CabDocumentoVenta.objects.select_related('ch_codi_cliente')
@@ -65,7 +65,7 @@ class RelacionComprobanteVentaView(APIView):
 
 
 class ListaCobranzaDiariaView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdministrador]
 
     def get(self, request):
         qs = CabCobranzaCredito.objects.select_related('ch_codi_cliente')
@@ -86,7 +86,7 @@ class ListaCobranzaDiariaView(APIView):
 
 
 class IngresoEgresoMesView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdministrador]
 
     def get(self, request):
         anio   = request.query_params.get('anio')
@@ -120,7 +120,7 @@ class IngresoEgresoMesView(APIView):
 
 
 class ConsultaIngresoDiarioView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdministrador]
 
     def get(self, request):
         fecha  = request.query_params.get('fecha')

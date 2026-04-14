@@ -16,6 +16,7 @@ import TipoIncidente from './pages/maestros/TipoIncidente';
 // Movimientos
 import Tickets        from './pages/movimientos/Tickets';
 import CobranzaCredito from './pages/movimientos/CobranzaCredito';
+import ConsultaTicketCredito from './pages/movimientos/ConsultaTicketCredito';
 import RecibosEgreso  from './pages/movimientos/RecibosEgreso';
 import RecibosIngreso from './pages/movimientos/RecibosIngreso';
 import Tarifario   from './pages/movimientos/Tarifario';
@@ -32,14 +33,28 @@ import IngresoDiario     from './pages/reportes/IngresoDiario';
 import Usuarios    from './pages/seguridad/Usuarios';
 import Perfiles    from './pages/seguridad/Perfiles';
 
-function PrivateRoute({ children }) {
-  const { user, loading } = useAuth();
-  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}>Cargando...</div>;
-  return user ? <Layout>{children}</Layout> : <Navigate to="/login" />;
+function hasModuleAccess(user, allowedModules) {
+  if (!allowedModules || allowedModules.length === 0) return true;
+  return allowedModules.some((moduleName) => user?.allowed_modules?.includes(moduleName));
 }
 
-function PR({ children }) {
-  return <PrivateRoute>{children}</PrivateRoute>;
+function hasRoleAccess(user, allowedRoles) {
+  if (!allowedRoles || allowedRoles.length === 0) return true;
+  return allowedRoles.includes(user?.role);
+}
+
+function PrivateRoute({ children, allowedModules = [], allowedRoles = [] }) {
+  const { user, loading } = useAuth();
+  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}>Cargando...</div>;
+  if (!user) return <Navigate to="/login" />;
+  if (!hasModuleAccess(user, allowedModules) || !hasRoleAccess(user, allowedRoles)) {
+    return <Navigate to="/" replace />;
+  }
+  return <Layout>{children}</Layout>;
+}
+
+function PR({ children, allowedModules = [], allowedRoles = [] }) {
+  return <PrivateRoute allowedModules={allowedModules} allowedRoles={allowedRoles}>{children}</PrivateRoute>;
 }
 
 export default function App() {
@@ -50,38 +65,38 @@ export default function App() {
           <Route path="/login" element={<Login />} />
 
           {/* Maestros */}
-          <Route path="/maestros/clientes"      element={<PR><Clientes /></PR>} />
-          <Route path="/maestros/choferes"      element={<PR><Choferes /></PR>} />
-          <Route path="/maestros/vehiculos"     element={<PR><Vehiculos /></PR>} />
-          <Route path="/maestros/tipo-vehiculo" element={<PR><TipoVehiculo /></PR>} />
-          <Route path="/maestros/proveedores"   element={<PR><Proveedores /></PR>} />
-          <Route path="/maestros/tipo-egreso"   element={<PR><TipoEgreso /></PR>} />
-          <Route path="/maestros/tipo-ingreso"  element={<PR><TipoIngreso /></PR>} />
-          <Route path="/maestros/tipo-incidente" element={<PR><TipoIncidente /></PR>} />
+          <Route path="/maestros/clientes"      element={<PR allowedModules={['MAESTROS']}><Clientes /></PR>} />
+          <Route path="/maestros/choferes"      element={<PR allowedModules={['MAESTROS']}><Choferes /></PR>} />
+          <Route path="/maestros/vehiculos"     element={<PR allowedModules={['MAESTROS']}><Vehiculos /></PR>} />
+          <Route path="/maestros/tipo-vehiculo" element={<PR allowedModules={['MAESTROS']}><TipoVehiculo /></PR>} />
+          <Route path="/maestros/proveedores"   element={<PR allowedModules={['MAESTROS']}><Proveedores /></PR>} />
+          <Route path="/maestros/tipo-egreso"   element={<PR allowedModules={['MAESTROS']}><TipoEgreso /></PR>} />
+          <Route path="/maestros/tipo-ingreso"  element={<PR allowedModules={['MAESTROS']}><TipoIngreso /></PR>} />
+          <Route path="/maestros/tipo-incidente" element={<PR allowedModules={['MAESTROS']}><TipoIncidente /></PR>} />
 
           {/* Movimientos */}
-          <Route path="/movimientos/tickets"                  element={<PR><Tickets /></PR>} />
-          <Route path="/movimientos/cobranza-credito"         element={<PR><CobranzaCredito /></PR>} />
-          <Route path="/movimientos/consulta-ticket-credito"   element={<PR><CobranzaCredito /></PR>} />
-          <Route path="/movimientos/recibos-egreso"           element={<PR><RecibosEgreso /></PR>} />
-          <Route path="/movimientos/recibos-ingreso"  element={<PR><RecibosIngreso /></PR>} />
-          <Route path="/movimientos/tarifario"    element={<PR><Tarifario /></PR>} />
-          <Route path="/movimientos/cierre-turno"             element={<PR><CierreTurno /></PR>} />
-          <Route path="/movimientos/consulta-ingreso-diario"  element={<PR><IngresoDiario /></PR>} />
+          <Route path="/movimientos/tickets"                  element={<PR allowedModules={['MOVIMIENTOS']}><Tickets /></PR>} />
+          <Route path="/movimientos/cobranza-credito"         element={<PR allowedModules={['MOVIMIENTOS']}><CobranzaCredito /></PR>} />
+          <Route path="/movimientos/consulta-ticket-credito"   element={<PR allowedModules={['MOVIMIENTOS']}><ConsultaTicketCredito /></PR>} />
+          <Route path="/movimientos/recibos-egreso"           element={<PR allowedModules={['MOVIMIENTOS']}><RecibosEgreso /></PR>} />
+          <Route path="/movimientos/recibos-ingreso"  element={<PR allowedModules={['MOVIMIENTOS']}><RecibosIngreso /></PR>} />
+          <Route path="/movimientos/tarifario"    element={<PR allowedModules={['MOVIMIENTOS']}><Tarifario /></PR>} />
+          <Route path="/movimientos/cierre-turno"             element={<PR allowedModules={['MOVIMIENTOS']}><CierreTurno /></PR>} />
+          <Route path="/movimientos/consulta-ingreso-diario"  element={<PR allowedModules={['MOVIMIENTOS']}><IngresoDiario /></PR>} />
 
           {/* Reportes */}
-          <Route path="/reportes/ticket-salida" element={<PR><TicketSalida /></PR>} />
-          <Route path="/reportes/comprobantes"    element={<PR><ComprobantesVenta /></PR>} />
-          <Route path="/reportes/cobranza-diaria" element={<PR><CobranzaDiaria /></PR>} />
-          <Route path="/reportes/ingreso-egreso"  element={<PR><IngresoEgresoMes /></PR>} />
+          <Route path="/reportes/ticket-salida" element={<PR allowedModules={['REPORTES']}><TicketSalida /></PR>} />
+          <Route path="/reportes/comprobantes"    element={<PR allowedModules={['REPORTES']}><ComprobantesVenta /></PR>} />
+          <Route path="/reportes/cobranza-diaria" element={<PR allowedModules={['REPORTES']}><CobranzaDiaria /></PR>} />
+          <Route path="/reportes/ingreso-egreso"  element={<PR allowedModules={['REPORTES']}><IngresoEgresoMes /></PR>} />
 
           {/* Redirecciones */}
           <Route path="/" element={<Navigate to="/maestros/clientes" />} />
           <Route path="*" element={<Navigate to="/" />} />
 
           {/* Seguridad */}
-          <Route path="/seguridad/usuarios"       element={<PR><Usuarios /></PR>} />
-          <Route path="/seguridad/perfiles"       element={<PR><Perfiles /></PR>} />
+          <Route path="/seguridad/usuarios"       element={<PR allowedModules={['SEGURIDAD']} allowedRoles={['Administrador']}><Usuarios /></PR>} />
+          <Route path="/seguridad/perfiles"       element={<PR allowedModules={['SEGURIDAD']} allowedRoles={['Administrador']}><Perfiles /></PR>} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

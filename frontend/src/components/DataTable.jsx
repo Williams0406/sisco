@@ -1,28 +1,45 @@
-import { useState } from 'react';
+import { theme } from '../styles/tokens';
 
 export default function DataTable({
-  columns,      // [{ key, label, render? }]
-  data,         // array de objetos
+  columns,
+  data,
   loading,
-  onEdit,       // fn(row)
-  onDelete,     // fn(row)
-  onNew,        // fn()
+  onEdit,
+  onDelete,
+  onNew,
   title,
+  subtitle,
+  onRowClick,
+  getRowKey,
+  selectedRowKey,
 }) {
+  const colSpan = columns.length + ((onEdit || onDelete) ? 1 : 0);
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h2 style={styles.title}>{title}</h2>
-        {onNew && (
-          <button style={styles.btnNew} onClick={onNew}>+ Nuevo</button>
-        )}
+        <div>
+          <h2 style={styles.title}>{title}</h2>
+          {subtitle && <p style={styles.subtitle}>{subtitle}</p>}
+        </div>
+        <div style={styles.headerActions}>
+          <span style={styles.counter}>{data.length} registro(s)</span>
+          {onNew && (
+            <button style={styles.btnNew} type="button" onClick={onNew}>
+              + Nuevo
+            </button>
+          )}
+        </div>
       </div>
+
       <div style={styles.tableWrapper}>
         <table style={styles.table}>
           <thead>
             <tr>
               {columns.map((col) => (
-                <th key={col.key} style={styles.th}>{col.label}</th>
+                <th key={col.key} style={styles.th}>
+                  {col.label}
+                </th>
               ))}
               {(onEdit || onDelete) && <th style={styles.th}>Acciones</th>}
             </tr>
@@ -30,38 +47,72 @@ export default function DataTable({
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={columns.length + 1} style={styles.center}>
-                  Cargando...
+                <td colSpan={colSpan} style={styles.center}>
+                  <div style={styles.emptyState}>
+                    <strong style={styles.emptyTitle}>Cargando informacion</strong>
+                    <span style={styles.emptyText}>Estamos preparando los datos para ti.</span>
+                  </div>
                 </td>
               </tr>
             ) : data.length === 0 ? (
               <tr>
-                <td colSpan={columns.length + 1} style={styles.center}>
-                  No hay registros
+                <td colSpan={colSpan} style={styles.center}>
+                  <div style={styles.emptyState}>
+                    <strong style={styles.emptyTitle}>Sin resultados</strong>
+                    <span style={styles.emptyText}>Ajusta tus filtros o crea un nuevo registro.</span>
+                  </div>
                 </td>
               </tr>
             ) : (
-              data.map((row, i) => (
-                <tr key={i} style={i % 2 === 0 ? styles.rowEven : styles.rowOdd}>
-                  {columns.map((col) => (
-                    <td key={col.key} style={styles.td}>
-                      {col.render ? col.render(row[col.key], row) : row[col.key]}
-                    </td>
-                  ))}
-                  {(onEdit || onDelete) && (
-                    <td style={styles.td}>
-                      {onEdit && (
-                        <button style={styles.btnEdit}
-                          onClick={() => onEdit(row)}>✏️</button>
-                      )}
-                      {onDelete && (
-                        <button style={styles.btnDelete}
-                          onClick={() => onDelete(row)}>🗑️</button>
-                      )}
-                    </td>
-                  )}
-                </tr>
-              ))
+              data.map((row, i) => {
+                const key = getRowKey ? getRowKey(row, i) : i;
+
+                return (
+                  <tr
+                    key={key}
+                    style={{
+                      ...(i % 2 === 0 ? styles.rowEven : styles.rowOdd),
+                      ...(selectedRowKey !== undefined && selectedRowKey === key ? styles.rowSelected : {}),
+                      ...(onRowClick ? styles.rowClickable : {}),
+                    }}
+                    onClick={onRowClick ? () => onRowClick(row, i) : undefined}
+                  >
+                    {columns.map((col) => (
+                      <td key={col.key} style={styles.td}>
+                        {col.render ? col.render(row[col.key], row) : row[col.key]}
+                      </td>
+                    ))}
+                    {(onEdit || onDelete) && (
+                      <td style={styles.td}>
+                        {onEdit && (
+                          <button
+                            style={styles.btnEdit}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEdit(row);
+                            }}
+                          >
+                            Editar
+                          </button>
+                        )}
+                        {onDelete && (
+                          <button
+                            style={styles.btnDelete}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDelete(row);
+                            }}
+                          >
+                            Eliminar
+                          </button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -71,17 +122,126 @@ export default function DataTable({
 }
 
 const styles = {
-  container: { background: '#fff', borderRadius: 10, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.08)' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  title: { margin: 0, fontSize: 18, color: '#1f2937' },
-  btnNew: { background: '#2563eb', color: '#fff', border: 'none', padding: '8px 18px', borderRadius: 6, cursor: 'pointer', fontWeight: 600 },
-  tableWrapper: { overflowX: 'auto' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: 13 },
-  th: { background: '#f9fafb', padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', borderBottom: '2px solid #e5e7eb' },
-  td: { padding: '9px 12px', borderBottom: '1px solid #f3f4f6', color: '#4b5563' },
-  rowEven: { background: '#fff' },
-  rowOdd: { background: '#fafafa' },
-  center: { textAlign: 'center', padding: 24, color: '#9ca3af' },
-  btnEdit: { background: 'none', border: 'none', cursor: 'pointer', marginRight: 6, fontSize: 15 },
-  btnDelete: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 15 },
+  container: {
+    background: theme.colors.panel,
+    borderRadius: theme.radius.lg,
+    padding: 20,
+    border: `1px solid ${theme.colors.border}`,
+    boxShadow: theme.shadow.card,
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 16,
+    marginBottom: 16,
+  },
+  headerActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+  },
+  title: {
+    margin: 0,
+    fontSize: 20,
+    color: theme.colors.text,
+    fontWeight: 800,
+  },
+  subtitle: {
+    margin: '4px 0 0',
+    fontSize: theme.typography.body,
+    color: theme.colors.textMuted,
+  },
+  counter: {
+    background: theme.colors.panelMuted,
+    color: theme.colors.textMuted,
+    border: `1px solid ${theme.colors.border}`,
+    padding: '8px 12px',
+    borderRadius: theme.radius.pill,
+    fontSize: theme.typography.small,
+    fontWeight: 700,
+    whiteSpace: 'nowrap',
+  },
+  btnNew: {
+    background: theme.colors.brand,
+    color: '#fff',
+    border: 'none',
+    padding: '9px 18px',
+    borderRadius: theme.radius.sm,
+    cursor: 'pointer',
+    fontWeight: 700,
+    boxShadow: theme.shadow.soft,
+  },
+  tableWrapper: {
+    overflowX: 'auto',
+    background: theme.colors.panel,
+    border: `1px solid ${theme.colors.border}`,
+    borderRadius: theme.radius.md,
+  },
+  table: {
+    width: '100%',
+    background: theme.colors.panel,
+    borderCollapse: 'collapse',
+    fontSize: theme.typography.body,
+  },
+  th: {
+    background: theme.colors.panelMuted,
+    padding: '12px 14px',
+    textAlign: 'left',
+    fontWeight: 700,
+    color: theme.colors.textMuted,
+    borderBottom: `1px solid ${theme.colors.border}`,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    fontSize: theme.typography.small,
+    whiteSpace: 'nowrap',
+  },
+  td: {
+    padding: '12px 14px',
+    borderBottom: '1px solid #edf2f7',
+    color: theme.colors.text,
+    verticalAlign: 'middle',
+  },
+  rowEven: { background: theme.colors.panel },
+  rowOdd: { background: '#fbfdff' },
+  rowSelected: { background: theme.colors.brandTint },
+  rowClickable: { cursor: 'pointer' },
+  center: { textAlign: 'center', padding: 0 },
+  emptyState: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    padding: 36,
+  },
+  emptyTitle: {
+    color: theme.colors.text,
+    fontSize: theme.typography.body,
+  },
+  emptyText: {
+    color: theme.colors.textMuted,
+    fontSize: theme.typography.body,
+  },
+  btnEdit: {
+    background: theme.colors.panelMuted,
+    border: `1px solid ${theme.colors.border}`,
+    cursor: 'pointer',
+    marginRight: 6,
+    fontSize: 12,
+    borderRadius: 8,
+    padding: '6px 10px',
+    color: theme.colors.text,
+    fontWeight: 700,
+  },
+  btnDelete: {
+    background: theme.colors.dangerTint,
+    border: '1px solid #fecaca',
+    cursor: 'pointer',
+    fontSize: 12,
+    borderRadius: 8,
+    padding: '6px 10px',
+    color: theme.colors.danger,
+    fontWeight: 700,
+  },
 };

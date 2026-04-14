@@ -1,6 +1,6 @@
 from rest_framework.routers import DefaultRouter
 from .views import (
-    DetTarifarioViewSet, MovTicketViewSet,
+    DetTarifarioViewSet, ConfiguracionTurnoViewSet, MovTicketViewSet,
     CabCobranzaCreditoViewSet, DetCobranzaCreditoViewSet,
     CabDocumentoVentaViewSet, CabCierreTurnoViewSet,
     CabReciboEgresoViewSet, CabReciboIngresoViewSet,
@@ -8,6 +8,7 @@ from .views import (
 
 router = DefaultRouter()
 router.register(r'tarifario',          DetTarifarioViewSet,        basename='tarifario')
+router.register(r'config-turnos',      ConfiguracionTurnoViewSet,  basename='config-turnos')
 router.register(r'tickets',            MovTicketViewSet,           basename='ticket')
 router.register(r'cobranza-credito',   CabCobranzaCreditoViewSet,  basename='cobranza-credito')
 router.register(r'det-cobranza',       DetCobranzaCreditoViewSet,  basename='det-cobranza')

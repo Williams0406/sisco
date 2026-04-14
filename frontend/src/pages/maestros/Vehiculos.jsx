@@ -1,32 +1,54 @@
 import { useEffect, useState } from 'react';
 import api from '../../api/axios';
-import DataTable from '../../components/DataTable';
-import FormModal from '../../components/FormModal';
+import MasterSplitView from './MasterSplitView';
 import { isTrueValue, toBooleanOrNull } from './booleanUtils';
 
-const COLUMNS = [
-  { key: 'ch_codi_vehiculo', label: 'Código' },
+const VEHICLE_PLATE_REGEX = /^[A-Z0-9]{3}-[A-Z0-9]{3}$/;
+
+const formatVehiclePlateInput = (value) => {
+  const compactValue = String(value ?? '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 6);
+
+  if (compactValue.length <= 3) return compactValue;
+  return `${compactValue.slice(0, 3)}-${compactValue.slice(3)}`;
+};
+
+const normalizeVehiclePlate = (value) => {
+  const rawValue = String(value ?? '').trim().toUpperCase();
+  const compactValue = rawValue.replace(/[-\s]/g, '');
+
+  if (!/^[A-Z0-9]{6}$/.test(compactValue)) return null;
+  return `${compactValue.slice(0, 3)}-${compactValue.slice(3)}`;
+};
+
+const createEmptyForm = () => ({
+  ch_codi_vehiculo: '',
+  ch_plac_vehiculo: '',
+  ch_tipo_vehiculo: '',
+  ch_codi_cliente: '',
+  ch_codi_chofer: '',
+  ch_esta_parqueado: 'false',
+  ch_esta_activo: 'true',
+});
+
+const columns = [
+  { key: 'ch_codi_vehiculo', label: 'Codigo' },
   { key: 'ch_plac_vehiculo', label: 'Placa' },
   { key: 'tipo_vehiculo_desc', label: 'Tipo' },
   { key: 'cliente_desc', label: 'Cliente' },
   { key: 'chofer_desc', label: 'Chofer' },
-  { key: 'ch_esta_parqueado', label: 'Parqueado', render: (v) => isTrueValue(v) ? '🚗 Sí' : '—' },
-  { key: 'ch_esta_activo', label: 'Estado', render: (v) => isTrueValue(v) ? '✅ Activo' : '❌ Inactivo' },
+  { key: 'ch_esta_parqueado', label: 'Parqueado', render: (value) => (isTrueValue(value) ? 'Si' : 'No') },
+  { key: 'ch_esta_activo', label: 'Estado', render: (value) => (isTrueValue(value) ? 'Activo' : 'Inactivo') },
 ];
-
-const normalizeForm = (payload) => ({
-  ...payload,
-  ch_esta_activo: toBooleanOrNull(payload.ch_esta_activo),
-  ch_esta_parqueado: toBooleanOrNull(payload.ch_esta_parqueado),
-});
 
 export default function Vehiculos() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(false);
-  const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState(createEmptyForm());
   const [tiposVeh, setTiposVeh] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [choferes, setChoferes] = useState([]);
@@ -34,66 +56,152 @@ export default function Vehiculos() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [vRes, tRes, cRes, chRes] = await Promise.all([
+      const [vehiculosRes, tiposRes, clientesRes, choferesRes] = await Promise.all([
         api.get('/maestros/vehiculos/?page_size=200'),
         api.get('/maestros/tipo-vehiculos/?page_size=200'),
         api.get('/maestros/clientes/?page_size=200'),
         api.get('/maestros/choferes/?page_size=200'),
       ]);
-      setData(vRes.data.results || vRes.data);
-      setTiposVeh(tRes.data.results || tRes.data);
-      setClientes(cRes.data.results || cRes.data);
-      setChoferes(chRes.data.results || chRes.data);
-    } finally { setLoading(false); }
+
+      setData(vehiculosRes.data.results || vehiculosRes.data);
+      setTiposVeh(tiposRes.data.results || tiposRes.data);
+      setClientes(clientesRes.data.results || clientesRes.data);
+      setChoferes(choferesRes.data.results || choferesRes.data);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+  }, []);
 
-  const getFields = () => [
-    { key: 'ch_codi_vehiculo', label: 'Código', placeholder: 'Ej: V00001' },
-    { key: 'ch_plac_vehiculo', label: 'Placa', placeholder: 'Ej: ABC-123' },
-    { key: 'ch_tipo_vehiculo', label: 'Tipo de Vehículo', type: 'select', options: tiposVeh.map((t) => ({ value: t.ch_tipo_vehiculo, label: t.vc_desc_tipo_vehiculo })) },
-    { key: 'ch_codi_cliente', label: 'Cliente', type: 'select', options: clientes.map((c) => ({ value: c.ch_codi_cliente, label: c.vc_razo_soci_cliente })) },
-    { key: 'ch_codi_chofer', label: 'Chofer', type: 'select', options: choferes.map((c) => ({ value: c.ch_codi_chofer, label: c.vc_desc_chofer })) },
-    { key: 'ch_esta_parqueado', label: 'Parqueado', type: 'select', options: [{ value: 'true', label: 'Sí' }, { value: 'false', label: 'No' }] },
-    { key: 'ch_esta_activo', label: 'Estado', type: 'select', options: [{ value: 'true', label: 'Activo' }, { value: 'false', label: 'Inactivo' }] },
+  const handleChange = (key, value) => {
+    setForm((prev) => ({
+      ...prev,
+      [key]: key === 'ch_plac_vehiculo' ? formatVehiclePlateInput(value) : value,
+    }));
+  };
+
+  const handleNew = () => {
+    setEditId(null);
+    setForm(createEmptyForm());
+  };
+
+  const handleSelect = (row) => {
+    setEditId(row.ch_codi_vehiculo);
+    setForm({
+      ch_codi_vehiculo: row.ch_codi_vehiculo ?? '',
+      ch_plac_vehiculo: normalizeVehiclePlate(row.ch_plac_vehiculo) ?? String(row.ch_plac_vehiculo ?? '').toUpperCase(),
+      ch_tipo_vehiculo: row.ch_tipo_vehiculo ?? '',
+      ch_codi_cliente: row.ch_codi_cliente ?? '',
+      ch_codi_chofer: row.ch_codi_chofer ?? '',
+      ch_esta_parqueado: isTrueValue(row.ch_esta_parqueado) ? 'true' : 'false',
+      ch_esta_activo: isTrueValue(row.ch_esta_activo) ? 'true' : 'false',
+    });
+  };
+
+  const fields = [
+    { key: 'ch_codi_vehiculo', label: 'Codigo', readOnly: true, placeholder: 'Generado automaticamente' },
+    { key: 'ch_plac_vehiculo', label: 'Placa', placeholder: 'ABC-123', maxLength: 7 },
+    {
+      key: 'ch_tipo_vehiculo',
+      label: 'Tipo de vehiculo',
+      type: 'select',
+      options: tiposVeh.map((item) => ({ value: item.ch_tipo_vehiculo, label: item.vc_desc_tipo_vehiculo })),
+      placeholder: 'Seleccionar tipo',
+    },
+    {
+      key: 'ch_codi_cliente',
+      label: 'Cliente',
+      type: 'select',
+      options: clientes.map((item) => ({ value: item.ch_codi_cliente, label: item.vc_razo_soci_cliente })),
+      placeholder: 'Seleccionar cliente',
+    },
+    {
+      key: 'ch_codi_chofer',
+      label: 'Chofer',
+      type: 'select',
+      options: choferes.map((item) => ({ value: item.ch_codi_chofer, label: item.vc_desc_chofer })),
+      placeholder: 'Seleccionar chofer',
+    },
+    {
+      key: 'ch_esta_parqueado',
+      label: 'Parqueado',
+      type: 'select',
+      options: [
+        { value: 'true', label: 'Si' },
+        { value: 'false', label: 'No' },
+      ],
+    },
+    {
+      key: 'ch_esta_activo',
+      label: 'Estado',
+      type: 'select',
+      options: [
+        { value: 'true', label: 'Activo' },
+        { value: 'false', label: 'Inactivo' },
+      ],
+    },
   ];
 
   const handleSave = async () => {
+    const normalizedPlate = normalizeVehiclePlate(form.ch_plac_vehiculo);
+    if (!normalizedPlate || !VEHICLE_PLATE_REGEX.test(normalizedPlate)) {
+      alert('La placa debe tener el formato ABC-123 usando solo letras mayusculas y numeros.');
+      return;
+    }
+
     setSaving(true);
     try {
-      const payload = normalizeForm(form);
+      const payload = {
+        ...form,
+        ch_plac_vehiculo: normalizedPlate,
+        ch_esta_activo: toBooleanOrNull(form.ch_esta_activo),
+        ch_esta_parqueado: toBooleanOrNull(form.ch_esta_parqueado),
+      };
+
+      if (!editId) delete payload.ch_codi_vehiculo;
+
       if (editId) await api.put(`/maestros/vehiculos/${editId}/`, payload);
       else await api.post('/maestros/vehiculos/', payload);
-      setModal(false);
-      fetchData();
+
+      await fetchData();
+      handleNew();
     } catch (err) {
-      alert('Error: ' + JSON.stringify(err.response?.data));
-    } finally { setSaving(false); }
+      alert(`Error al guardar: ${JSON.stringify(err.response?.data || err.message)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!editId) return;
+    if (!confirm(`Eliminar vehiculo ${form.ch_plac_vehiculo || editId}?`)) return;
+    await api.delete(`/maestros/vehiculos/${editId}/`);
+    await fetchData();
+    handleNew();
   };
 
   return (
-    <>
-      <DataTable title="Vehículos" columns={COLUMNS} data={data} loading={loading}
-        onNew={() => { setForm({}); setEditId(null); setModal(true); }}
-        onEdit={(row) => { setForm({ ...row }); setEditId(row.ch_codi_vehiculo); setModal(true); }}
-        onDelete={async (row) => {
-          if (!confirm(`¿Eliminar vehículo ${row.ch_plac_vehiculo}?`)) return;
-          await api.delete(`/maestros/vehiculos/${row.ch_codi_vehiculo}/`);
-          fetchData();
-        }}
-      />
-      {modal && (
-        <FormModal
-          title={editId ? 'Editar Vehículo' : 'Nuevo Vehículo'}
-          fields={editId ? getFields().map((f) => (f.key === 'ch_codi_vehiculo' ? { ...f, readOnly: true } : f)) : getFields()}
-          values={form}
-          onChange={(k, v) => setForm((p) => ({ ...p, [k]: v }))}
-          onSave={handleSave}
-          onClose={() => setModal(false)}
-          loading={saving}
-        />
-      )}
-    </>
+    <MasterSplitView
+      title="Vehiculos"
+      singularTitle="vehiculo"
+      subtitle="Registra y consulta vehiculos con acceso directo al detalle sin abrir modales."
+      columns={columns}
+      data={data}
+      loading={loading}
+      form={form}
+      fields={fields}
+      editId={editId}
+      saving={saving}
+      onChange={handleChange}
+      onNew={handleNew}
+      onSelect={handleSelect}
+      onSave={handleSave}
+      onDelete={handleDelete}
+      getRowId={(row) => row.ch_codi_vehiculo}
+      getRowTitle={() => 'vehiculo'}
+    />
   );
 }

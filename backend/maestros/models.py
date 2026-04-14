@@ -24,7 +24,125 @@ Relaciones principales:
   MAE_TIPO_DOCUMENTO ← MAE_CORRELATIVO
 """
 
+import re
+
+from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
+from seguridad.current_user import get_current_user
+
+DEFAULT_GARITA_CODE = 'GAR'
+DEFAULT_GARITA_DESC = 'Garita'
+VEHICLE_PLATE_ERROR_MESSAGE = 'La placa debe tener el formato ABC-123 usando solo letras mayusculas y numeros.'
+VEHICLE_PLATE_PATTERN = re.compile(r'^[A-Z0-9]{3}-[A-Z0-9]{3}$')
+
+
+def _next_numeric_code(model, field_name, width, prefix=''):
+    max_value = 0
+    suffix_width = width - len(prefix)
+    for raw_value in model.objects.values_list(field_name, flat=True):
+        value = str(raw_value or '').strip()
+        if prefix:
+            if not value.startswith(prefix):
+                continue
+            value = value[len(prefix):]
+        if value.isdigit():
+            max_value = max(max_value, int(value))
+    return f'{prefix}{str(max_value + 1).zfill(suffix_width)}'
+
+
+def _preserve_existing_code(instance, field_name):
+    if not instance.pk:
+        return
+    existing = type(instance).objects.filter(pk=instance.pk).only(field_name).first()
+    if existing:
+        setattr(instance, field_name, getattr(existing, field_name))
+
+
+def _current_audit_user_code():
+    user = get_current_user()
+    if not user:
+        return None
+
+    user_code = getattr(user, 'ch_codi_usua', None) or getattr(user, 'ch_codi_usuario', None)
+    return str(user_code).strip()[:15] if user_code else None
+
+
+def _current_audit_datetime():
+    now = timezone.now()
+    return timezone.localtime(now) if timezone.is_aware(now) else now
+
+
+def normalize_vehicle_plate(value):
+    raw_value = '' if value is None else str(value).strip().upper()
+    if not raw_value:
+        raise ValidationError(VEHICLE_PLATE_ERROR_MESSAGE)
+
+    compact_value = raw_value.replace('-', '').replace(' ', '')
+    if len(compact_value) != 6 or not compact_value.isalnum():
+        raise ValidationError(VEHICLE_PLATE_ERROR_MESSAGE)
+
+    normalized_value = f'{compact_value[:3]}-{compact_value[3:]}'
+    if not VEHICLE_PLATE_PATTERN.fullmatch(normalized_value):
+        raise ValidationError(VEHICLE_PLATE_ERROR_MESSAGE)
+
+    return normalized_value
+
+
+def ensure_default_garita():
+    garita, created = MaeGarita.objects.get_or_create(
+        ch_codi_garita=DEFAULT_GARITA_CODE,
+        defaults={
+            'vc_desc_garita': DEFAULT_GARITA_DESC,
+            'ch_esta_activo': True,
+        },
+    )
+    updates = []
+    if garita.vc_desc_garita != DEFAULT_GARITA_DESC:
+        garita.vc_desc_garita = DEFAULT_GARITA_DESC
+        updates.append('vc_desc_garita')
+    if garita.ch_esta_activo is not True:
+        garita.ch_esta_activo = True
+        updates.append('ch_esta_activo')
+    if updates:
+        garita.save(update_fields=updates)
+    return garita
+
+
+class AuditFieldsMixin(models.Model):
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        creating = self._state.adding
+        current_user_code = _current_audit_user_code()
+        current_datetime = _current_audit_datetime()
+
+        if creating:
+            if hasattr(self, 'dt_fech_usua_regi'):
+                self.dt_fech_usua_regi = current_datetime
+            if current_user_code and hasattr(self, 'ch_codi_usua_regi'):
+                self.ch_codi_usua_regi = current_user_code
+            if hasattr(self, 'dt_fech_usua_modi'):
+                self.dt_fech_usua_modi = None
+            if hasattr(self, 'ch_codi_usua_modi'):
+                self.ch_codi_usua_modi = None
+        else:
+            previous = type(self).objects.filter(pk=self.pk).values(
+                'ch_codi_usua_regi',
+                'dt_fech_usua_regi',
+            ).first()
+            if previous:
+                if hasattr(self, 'ch_codi_usua_regi'):
+                    self.ch_codi_usua_regi = previous.get('ch_codi_usua_regi')
+                if hasattr(self, 'dt_fech_usua_regi'):
+                    self.dt_fech_usua_regi = previous.get('dt_fech_usua_regi')
+            if hasattr(self, 'dt_fech_usua_modi'):
+                self.dt_fech_usua_modi = current_datetime
+            if current_user_code and hasattr(self, 'ch_codi_usua_modi'):
+                self.ch_codi_usua_modi = current_user_code
+
+        super().save(*args, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -158,12 +276,12 @@ class MaeUsuario(models.Model):
     ch_pass_usua = models.CharField(max_length=10, null=True, blank=True)
     ch_codi_usua = models.CharField(max_length=15, null=True, blank=True)
     dt_fech_ulti_actu = models.DateTimeField(null=True, blank=True)
-    ch_codi_cta_upch = models.CharField(max_length=15, null=True, blank=True)
+    ch_codi_cta_upch = models.CharField(max_length=15, null=True, blank=True) # No usado
     ch_esta_programa_todos = models.CharField(max_length=1, null=True, blank=True)
     ch_esta_horas_extra = models.CharField(max_length=1, null=True, blank=True)
     ch_esta_autoriza = models.CharField(max_length=1, null=True, blank=True)
-    ch_tipo_usuario = models.CharField(max_length=1, null=True, blank=True)
-    ch_pass_usua2 = models.CharField(max_length=10, null=True, blank=True)
+    ch_tipo_usuario = models.CharField(max_length=1, null=True, blank=True) # No usado
+    ch_pass_usua2 = models.CharField(max_length=10, null=True, blank=True) # No usado
 
     class Meta:
         db_table = 'MAE_USUARIO'
@@ -171,6 +289,38 @@ class MaeUsuario(models.Model):
 
     def __str__(self):
         return f'{self.ch_codi_usuario} – {self.vc_desc_nomb_usuario}'
+
+    @property
+    def is_authenticated(self):
+        return True
+
+    @property
+    def is_anonymous(self):
+        return False
+
+    @property
+    def username(self):
+        return self.ch_codi_usuario
+
+    @classmethod
+    def generar_codigo_interno(cls):
+        ultimo = (
+            cls.objects.exclude(ch_codi_usua__isnull=True)
+            .exclude(ch_codi_usua__exact='')
+            .order_by('-ch_codi_usua')
+            .values_list('ch_codi_usua', flat=True)
+            .first()
+        )
+        if ultimo and str(ultimo).isdigit():
+            return str(int(ultimo) + 1).zfill(max(len(str(ultimo)), 3))
+        return '001'
+
+    def save(self, *args, **kwargs):
+        if not self.ch_codi_usua:
+            self.ch_codi_usua = self.generar_codigo_interno()
+        now = timezone.now()
+        self.dt_fech_ulti_actu = timezone.localtime(now) if timezone.is_aware(now) else now
+        super().save(*args, **kwargs)
 
 
 class MaePerfilMaeUsuario(models.Model):
@@ -211,7 +361,7 @@ class MaePerfilMaeUsuario(models.Model):
 # MAESTRAS OPERATIVAS
 # ---------------------------------------------------------------------------
 
-class MaeGarita(models.Model):
+class MaeGarita(AuditFieldsMixin, models.Model):
     """Garita / punto de control."""
     ch_codi_garita = models.CharField(max_length=3, primary_key=True)
     vc_desc_garita = models.CharField(max_length=50, null=True, blank=True)
@@ -228,8 +378,17 @@ class MaeGarita(models.Model):
     def __str__(self):
         return f'{self.ch_codi_garita} – {self.vc_desc_garita}'
 
+    def save(self, *args, **kwargs):
+        if not self.ch_codi_garita:
+            self.ch_codi_garita = DEFAULT_GARITA_CODE
+        if self.ch_codi_garita == DEFAULT_GARITA_CODE:
+            self.vc_desc_garita = DEFAULT_GARITA_DESC
+            if self.ch_esta_activo is None:
+                self.ch_esta_activo = True
+        super().save(*args, **kwargs)
 
-class MaeGaritaXUsuario(models.Model):
+
+class MaeGaritaXUsuario(AuditFieldsMixin, models.Model):
     """
     Asignación de usuarios a garitas.
     Relaciones:
@@ -262,7 +421,7 @@ class MaeGaritaXUsuario(models.Model):
         verbose_name = 'Garita × Usuario'
 
 
-class MaeCliente(models.Model):
+class MaeCliente(AuditFieldsMixin, models.Model):
     """Cliente corporativo o particular."""
     ch_codi_cliente = models.CharField(max_length=4, primary_key=True)
     ch_ruc_cliente = models.CharField(max_length=11, null=True, blank=True)
@@ -284,8 +443,15 @@ class MaeCliente(models.Model):
     def __str__(self):
         return f'{self.ch_codi_cliente} – {self.vc_razo_soci_cliente}'
 
+    def save(self, *args, **kwargs):
+        if self.pk:
+            _preserve_existing_code(self, 'ch_codi_cliente')
+        elif not self.ch_codi_cliente:
+            self.ch_codi_cliente = _next_numeric_code(MaeCliente, 'ch_codi_cliente', 4, prefix='C')
+        super().save(*args, **kwargs)
 
-class MaeChofer(models.Model):
+
+class MaeChofer(AuditFieldsMixin, models.Model):
     """Conductor registrado."""
     ch_codi_chofer = models.CharField(max_length=4, primary_key=True)
     vc_desc_chofer = models.CharField(max_length=100, null=True, blank=True)
@@ -305,8 +471,15 @@ class MaeChofer(models.Model):
     def __str__(self):
         return f'{self.ch_codi_chofer} – {self.vc_desc_chofer}'
 
+    def save(self, *args, **kwargs):
+        if self.pk:
+            _preserve_existing_code(self, 'ch_codi_chofer')
+        elif not self.ch_codi_chofer:
+            self.ch_codi_chofer = _next_numeric_code(MaeChofer, 'ch_codi_chofer', 4, prefix='C')
+        super().save(*args, **kwargs)
 
-class MaeTipoVehiculo(models.Model):
+
+class MaeTipoVehiculo(AuditFieldsMixin, models.Model):
     """Tipo / categoría de vehículo."""
     ch_tipo_vehiculo = models.CharField(max_length=2, primary_key=True)
     vc_desc_tipo_vehiculo = models.CharField(max_length=50, null=True, blank=True)
@@ -323,8 +496,15 @@ class MaeTipoVehiculo(models.Model):
     def __str__(self):
         return f'{self.ch_tipo_vehiculo} – {self.vc_desc_tipo_vehiculo}'
 
+    def save(self, *args, **kwargs):
+        if self.pk:
+            _preserve_existing_code(self, 'ch_tipo_vehiculo')
+        elif not self.ch_tipo_vehiculo:
+            self.ch_tipo_vehiculo = _next_numeric_code(MaeTipoVehiculo, 'ch_tipo_vehiculo', 2)
+        super().save(*args, **kwargs)
 
-class MaeVehiculo(models.Model):
+
+class MaeVehiculo(AuditFieldsMixin, models.Model):
     """
     Vehículo registrado.
     Relaciones:
@@ -374,8 +554,16 @@ class MaeVehiculo(models.Model):
     def __str__(self):
         return f'{self.ch_codi_vehiculo} – {self.ch_plac_vehiculo}'
 
+    def save(self, *args, **kwargs):
+        if self.pk:
+            _preserve_existing_code(self, 'ch_codi_vehiculo')
+        elif not self.ch_codi_vehiculo:
+            self.ch_codi_vehiculo = _next_numeric_code(MaeVehiculo, 'ch_codi_vehiculo', 6, prefix='V')
+        self.ch_plac_vehiculo = normalize_vehicle_plate(self.ch_plac_vehiculo)
+        super().save(*args, **kwargs)
 
-class MaeTipoIncidente(models.Model):
+
+class MaeTipoIncidente(AuditFieldsMixin, models.Model):
     """Tipo de incidente registrable en tickets."""
     ch_codi_tipo_incidente = models.CharField(max_length=3, primary_key=True)
     vc_desc_tipo_incidente = models.CharField(max_length=50, null=True, blank=True)
@@ -392,8 +580,15 @@ class MaeTipoIncidente(models.Model):
     def __str__(self):
         return f'{self.ch_codi_tipo_incidente} – {self.vc_desc_tipo_incidente}'
 
+    def save(self, *args, **kwargs):
+        if self.pk:
+            _preserve_existing_code(self, 'ch_codi_tipo_incidente')
+        elif not self.ch_codi_tipo_incidente:
+            self.ch_codi_tipo_incidente = _next_numeric_code(MaeTipoIncidente, 'ch_codi_tipo_incidente', 3, prefix='N')
+        super().save(*args, **kwargs)
 
-class MaeTipoEgreso(models.Model):
+
+class MaeTipoEgreso(AuditFieldsMixin, models.Model):
     """Categoría de egreso de caja."""
     ch_codi_tipo_egreso = models.CharField(max_length=3, primary_key=True)
     vc_desc_tipo_egreso = models.CharField(max_length=50, null=True, blank=True)
@@ -410,8 +605,15 @@ class MaeTipoEgreso(models.Model):
     def __str__(self):
         return f'{self.ch_codi_tipo_egreso} – {self.vc_desc_tipo_egreso}'
 
+    def save(self, *args, **kwargs):
+        if self.pk:
+            _preserve_existing_code(self, 'ch_codi_tipo_egreso')
+        elif not self.ch_codi_tipo_egreso:
+            self.ch_codi_tipo_egreso = _next_numeric_code(MaeTipoEgreso, 'ch_codi_tipo_egreso', 3, prefix='E')
+        super().save(*args, **kwargs)
 
-class MaeTipoIngreso(models.Model):
+
+class MaeTipoIngreso(AuditFieldsMixin, models.Model):
     """Categoría de ingreso de caja."""
     ch_codi_tipo_ingreso = models.CharField(max_length=3, primary_key=True)
     vc_desc_tipo_ingreso = models.CharField(max_length=50, null=True, blank=True)
@@ -428,8 +630,15 @@ class MaeTipoIngreso(models.Model):
     def __str__(self):
         return f'{self.ch_codi_tipo_ingreso} – {self.vc_desc_tipo_ingreso}'
 
+    def save(self, *args, **kwargs):
+        if self.pk:
+            _preserve_existing_code(self, 'ch_codi_tipo_ingreso')
+        elif not self.ch_codi_tipo_ingreso:
+            self.ch_codi_tipo_ingreso = _next_numeric_code(MaeTipoIngreso, 'ch_codi_tipo_ingreso', 3, prefix='I')
+        super().save(*args, **kwargs)
 
-class MaeTipoDocumento(models.Model):
+
+class MaeTipoDocumento(AuditFieldsMixin, models.Model):
     """Tipo de documento fiscal/comercial (boleta, factura, etc.)."""
     ch_codi_tipo_dcmnt = models.CharField(max_length=2, primary_key=True)
     vc_desc_tipo_dcmnt = models.CharField(max_length=30, null=True, blank=True)
@@ -447,7 +656,7 @@ class MaeTipoDocumento(models.Model):
         return f'{self.ch_codi_tipo_dcmnt} – {self.vc_desc_tipo_dcmnt}'
 
 
-class MaeCorrelativo(models.Model):
+class MaeCorrelativo(AuditFieldsMixin, models.Model):
     """
     Correlativos de series/números por tipo de documento.
     Relaciones:
@@ -475,7 +684,7 @@ class MaeCorrelativo(models.Model):
         verbose_name = 'Correlativo'
 
 
-class MaeProveedor(models.Model):
+class MaeProveedor(AuditFieldsMixin, models.Model):
     """Proveedor para egresos de caja."""
     ch_codi_proveedor = models.CharField(max_length=4, primary_key=True)
     vc_razo_soci_prov = models.CharField(max_length=100, null=True, blank=True)
@@ -493,6 +702,13 @@ class MaeProveedor(models.Model):
 
     def __str__(self):
         return f'{self.ch_codi_proveedor} – {self.vc_razo_soci_prov}'
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            _preserve_existing_code(self, 'ch_codi_proveedor')
+        elif not self.ch_codi_proveedor:
+            self.ch_codi_proveedor = _next_numeric_code(MaeProveedor, 'ch_codi_proveedor', 4, prefix='P')
+        super().save(*args, **kwargs)
 
 
 class MaeVariable(models.Model):

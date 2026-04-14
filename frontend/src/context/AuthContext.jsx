@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
+import api from '../api/axios';
 
 const AuthContext = createContext(null);
 
@@ -10,9 +11,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const token = localStorage.getItem('access_token');
     if (token) {
-      axios.get('http://127.0.0.1:8000/api/seguridad/me/', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      api.get('/seguridad/me/')
         .then((r) => setUser(r.data))
         .catch(() => localStorage.clear())
         .finally(() => setLoading(false));
@@ -27,7 +26,7 @@ export function AuthProvider({ children }) {
     });
     localStorage.setItem('access_token',  res.data.access);
     localStorage.setItem('refresh_token', res.data.refresh);
-    setUser({ username });
+    setUser(res.data.user);
     return res.data;
   };
 
