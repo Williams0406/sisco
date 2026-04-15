@@ -21,7 +21,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' http://127.0.0.1:8000; connect-src 'self' http://127.0.0.1:8000; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+      "csp": "default-src 'self' http://localhost:5173 http://127.0.0.1:5173 https://sisco-production.up.railway.app; connect-src 'self' http://localhost:5173 http://127.0.0.1:5173 ws://localhost:5173 ws://127.0.0.1:5173 https://sisco-production.up.railway.app; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://localhost:5173 http://127.0.0.1:5173 https://sisco-production.up.railway.app"
     }
   },
   "bundle": {
