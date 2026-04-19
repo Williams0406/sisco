@@ -1,7 +1,26 @@
+import axios from 'axios';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { theme } from '../styles/tokens';
+
+function getLoginErrorMessage(error) {
+  if (axios.isAxiosError(error)) {
+    if (error.response?.status === 401) {
+      return 'Usuario o contrasena incorrectos';
+    }
+
+    if (error.response?.status && error.response.status >= 500) {
+      return 'El servidor de Railway respondio con un error. Intenta nuevamente en unos minutos.';
+    }
+
+    if (error.request && !error.response) {
+      return 'No se pudo conectar con Railway. Revisa CORS_ALLOWED_ORIGINS y que el backend este activo.';
+    }
+  }
+
+  return 'No se pudo iniciar sesion. Verifica la conexion con Railway e intenta otra vez.';
+}
 
 export default function Login() {
   const { login } = useAuth();
@@ -18,8 +37,8 @@ export default function Login() {
     try {
       await login(form.username, form.password);
       navigate('/');
-    } catch {
-      setError('Usuario o contrasena incorrectos');
+    } catch (error) {
+      setError(getLoginErrorMessage(error));
     } finally {
       setLoading(false);
     }

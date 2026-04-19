@@ -16,12 +16,13 @@
         "height": 800,
         "minWidth": 1024,
         "minHeight": 600,
+        "useHttpsScheme": true,
         "resizable": true,
         "fullscreen": false
       }
     ],
     "security": {
-      "csp": "default-src 'self' http://localhost:5173 http://127.0.0.1:5173 https://sisco-production.up.railway.app; connect-src 'self' http://localhost:5173 http://127.0.0.1:5173 ws://localhost:5173 ws://127.0.0.1:5173 https://sisco-production.up.railway.app; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://localhost:5173 http://127.0.0.1:5173 https://sisco-production.up.railway.app"
+      "csp": "default-src 'self' http://localhost:5173 http://127.0.0.1:5173 http://tauri.localhost https://tauri.localhost https://sisco-production.up.railway.app; connect-src 'self' http://localhost:5173 http://127.0.0.1:5173 ws://localhost:5173 ws://127.0.0.1:5173 http://tauri.localhost https://tauri.localhost https://sisco-production.up.railway.app; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://localhost:5173 http://127.0.0.1:5173 http://tauri.localhost https://tauri.localhost https://sisco-production.up.railway.app"
     }
   },
   "bundle": {
