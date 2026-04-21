@@ -590,6 +590,16 @@ def _coerce_value(field: models.Field, raw_value: Any) -> Any:
                 return None
             if isinstance(relation_field, models.CharField) and coerced == '0':
                 return None
+        # Normalizar ancho si el campo destino es CharField con max_length
+        if (
+            isinstance(relation_field, models.CharField)
+            and coerced is not None
+            and hasattr(relation_field, 'max_length')
+            and relation_field.max_length
+            and coerced.isdigit()
+            and len(coerced) < relation_field.max_length
+        ):
+            coerced = coerced.zfill(relation_field.max_length)
         return coerced
 
     if isinstance(field, models.BooleanField):
