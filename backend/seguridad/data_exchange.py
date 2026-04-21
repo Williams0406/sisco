@@ -719,6 +719,10 @@ TABLES['ADM_PERFIL_OPCIONES'] = TableConfig(
     **{**TABLES['ADM_PERFIL_OPCIONES'].__dict__, 'extra_validator': _validate_adm_perfil_opciones}
 )
 
+TABLES_BY_MODEL: dict[type[models.Model], str] = {
+    config.model: key for key, config in TABLES.items()
+}
+
 
 def _order_table_keys(table_keys: list[str]) -> list[str]:
     requested = {table_key for table_key in table_keys if table_key in TABLES}
@@ -838,7 +842,11 @@ def _validate_required_keys(config: TableConfig, rows: list[dict[str, Any]]) -> 
     return errors
 
 
-def _validate_foreign_keys(config: TableConfig, rows: list[dict[str, Any]]) -> list[str]:
+def _validate_foreign_keys(
+    config: TableConfig,
+    rows: list[dict[str, Any]],
+    imported_keys: dict[str, set[Any]] | None = None,
+) -> list[str]:
     errors: list[str] = []
     for field in config.model._meta.concrete_fields:
         if not field.is_relation:
@@ -856,6 +864,11 @@ def _validate_foreign_keys(config: TableConfig, rows: list[dict[str, Any]]) -> l
         existing = set(
             field.related_model.objects.filter(**{f'{target_attname}__in': list(values)}).values_list(target_attname, flat=True)
         )
+
+        dep_key = TABLES_BY_MODEL.get(field.related_model)
+        if dep_key and imported_keys and dep_key in imported_keys:
+            existing |= imported_keys[dep_key]
+
         missing = sorted(values - existing, key=lambda value: str(value))
         if not missing:
             continue
@@ -965,13 +978,14 @@ def _build_import_result(datasets_by_table: dict[str, list[ParsedDataset]], dry_
     ordered_tables = _order_table_keys(list(datasets_by_table.keys()))
     results: list[dict[str, Any]] = []
     all_errors: list[str] = []
+    imported_keys: dict[str, set[Any]] = {}
 
     with transaction.atomic():
         for table_key in ordered_tables:
             config = TABLES[table_key]
             prepared_rows = _dedupe_rows(config, _prepare_rows(config, datasets_by_table[table_key], context))
             errors = _validate_required_keys(config, prepared_rows)
-            errors.extend(_validate_foreign_keys(config, prepared_rows))
+            errors.extend(_validate_foreign_keys(config, prepared_rows, imported_keys))
             if config.extra_validator:
                 errors.extend(config.extra_validator(prepared_rows, context))
 
@@ -980,6 +994,13 @@ def _build_import_result(datasets_by_table: dict[str, list[ParsedDataset]], dry_
                 continue
 
             summary = _execute_upsert(config, prepared_rows, dry_run=dry_run)
+
+            pk_attname = config.pk_attname
+            imported_keys[table_key] = {
+                row.get(pk_attname) for row in prepared_rows
+                if row.get(pk_attname) is not None
+            }
+
             results.append(
                 {
                     'table': table_key,
