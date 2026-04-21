@@ -89,6 +89,7 @@ const menu = [
         items: [
           { label: 'Usuarios', path: '/seguridad/usuarios' },
           { label: 'Perfil de usuario', path: '/seguridad/perfiles' },
+          { label: 'Importar / Exportar', path: '/seguridad/intercambio-datos' },
         ],
       },
     ],

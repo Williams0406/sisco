@@ -32,6 +32,7 @@ import IngresoDiario     from './pages/reportes/IngresoDiario';
 // Seguridad
 import Usuarios    from './pages/seguridad/Usuarios';
 import Perfiles    from './pages/seguridad/Perfiles';
+import DataExchange from './pages/seguridad/DataExchange';
 
 function hasModuleAccess(user, allowedModules) {
   if (!allowedModules || allowedModules.length === 0) return true;
@@ -97,6 +98,7 @@ export default function App() {
           {/* Seguridad */}
           <Route path="/seguridad/usuarios"       element={<PR allowedModules={['SEGURIDAD']} allowedRoles={['Administrador']}><Usuarios /></PR>} />
           <Route path="/seguridad/perfiles"       element={<PR allowedModules={['SEGURIDAD']} allowedRoles={['Administrador']}><Perfiles /></PR>} />
+          <Route path="/seguridad/intercambio-datos" element={<PR allowedModules={['SEGURIDAD']} allowedRoles={['Administrador']}><DataExchange /></PR>} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
