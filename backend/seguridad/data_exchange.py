@@ -583,8 +583,13 @@ def _coerce_value(field: models.Field, raw_value: Any) -> Any:
     if field.is_relation:
         relation_field = field.target_field
         coerced = _coerce_value(relation_field, raw_value)
-        if coerced == 0 and not isinstance(relation_field, models.CharField) and field.null:
-            return None
+        if field.null:
+            if coerced is None:
+                return None
+            if not isinstance(relation_field, models.CharField) and coerced == 0:
+                return None
+            if isinstance(relation_field, models.CharField) and coerced == '0':
+                return None
         return coerced
 
     if isinstance(field, models.BooleanField):
