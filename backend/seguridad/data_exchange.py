@@ -54,6 +54,8 @@ from movimientos.models import (
 
 from .permissions import IsAdministrador
 
+DELIMITED_STREAM_CHUNK_SIZE = 5000
+
 
 def _normalize_table_key(value: str | None) -> str:
     raw_value = '' if value is None else str(value).strip()
@@ -197,6 +199,15 @@ def _normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _rows_from_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
+    rows = df.where(pd.notnull(df), None).to_dict(orient='records')
+    return [
+        {str(column).strip(): value for column, value in row.items()}
+        for row in rows
+        if any(not _is_blank(value) for value in row.values())
+    ]
+
+
 def _read_delimited_bytes(file_bytes: bytes) -> pd.DataFrame:
     decode_errors: list[str] = []
     for encoding in ('utf-8-sig', 'utf-8', 'latin-1'):
@@ -214,6 +225,60 @@ def _read_delimited_bytes(file_bytes: bytes) -> pd.DataFrame:
             decode_errors.append(f'{encoding}: {exc}')
 
     raise ValueError('No se pudo leer el archivo delimitado. ' + ' | '.join(decode_errors))
+
+
+def _detect_delimited_encoding(uploaded_file) -> str:
+    try:
+        sample = uploaded_file.read(65536)
+    finally:
+        uploaded_file.seek(0)
+
+    if isinstance(sample, str):
+        return 'utf-8'
+
+    for encoding in ('utf-8-sig', 'utf-8'):
+        try:
+            sample.decode(encoding)
+            return encoding
+        except UnicodeDecodeError:
+            continue
+    return 'latin-1'
+
+
+def _iter_delimited_dataframes(uploaded_file, chunk_size: int | None = None):
+    chunk_size = chunk_size or DELIMITED_STREAM_CHUNK_SIZE
+    encoding = _detect_delimited_encoding(uploaded_file)
+    text_stream = None
+
+    try:
+        uploaded_file.seek(0)
+        binary_stream = getattr(uploaded_file, 'file', uploaded_file)
+        text_stream = io.TextIOWrapper(binary_stream, encoding=encoding, newline='')
+        reader = pd.read_csv(
+            text_stream,
+            sep=None,
+            engine='python',
+            dtype=str,
+            keep_default_na=False,
+            chunksize=chunk_size,
+        )
+        for dataframe in reader:
+            normalized = _normalize_dataframe(dataframe)
+            if normalized.empty:
+                continue
+            yield normalized
+    except Exception as exc:
+        raise ValueError(f'No se pudo leer el archivo delimitado "{uploaded_file.name}". {exc}') from exc
+    finally:
+        if text_stream is not None:
+            try:
+                text_stream.detach()
+            except Exception:
+                pass
+        try:
+            uploaded_file.seek(0)
+        except Exception:
+            pass
 
 
 def _read_excel_bytes(file_bytes: bytes, filename: str) -> list[tuple[str, pd.DataFrame]]:
@@ -759,13 +824,7 @@ def _order_table_keys(table_keys: list[str]) -> list[str]:
 
 
 def _parse_dataset(table_key: str, source_name: str, df: pd.DataFrame) -> ParsedDataset:
-    rows = df.where(pd.notnull(df), None).to_dict(orient='records')
-    normalized_rows = [
-        {str(column).strip(): value for column, value in row.items()}
-        for row in rows
-        if any(not _is_blank(value) for value in row.values())
-    ]
-    return ParsedDataset(table_key=table_key, source_name=source_name, rows=normalized_rows)
+    return ParsedDataset(table_key=table_key, source_name=source_name, rows=_rows_from_dataframe(df))
 
 
 def _parse_upload(uploaded_file) -> tuple[list[ParsedDataset], list[str]]:
@@ -848,6 +907,17 @@ def _validate_required_keys(config: TableConfig, rows: list[dict[str, Any]]) -> 
         if missing:
             errors.append(
                 f'Fila {index}: faltan columnas clave {", ".join(missing)} en {config.key}.'
+            )
+    return errors
+
+
+def _validate_required_keys_from(config: TableConfig, rows: list[dict[str, Any]], source_name: str, start_index: int) -> list[str]:
+    errors: list[str] = []
+    for offset, row in enumerate(rows):
+        missing = [field_name for field_name in config.natural_key if _is_blank(row.get(field_name))]
+        if missing:
+            errors.append(
+                f'{source_name} fila {start_index + offset}: faltan columnas clave {", ".join(missing)} en {config.key}.'
             )
     return errors
 
@@ -969,6 +1039,25 @@ def _prepare_rows(config: TableConfig, datasets: list[ParsedDataset], context: I
     return prepared_rows
 
 
+def _prepare_chunk_rows(
+    config: TableConfig,
+    rows: list[dict[str, Any]],
+    context: ImportContext,
+    source_name: str,
+    start_index: int,
+) -> list[dict[str, Any]]:
+    prepared_rows: list[dict[str, Any]] = []
+    transform = config.import_transform or (lambda row, import_context: _default_import_transform(config, row, import_context))
+
+    for offset, row in enumerate(rows):
+        try:
+            prepared_rows.append(transform(row, context))
+        except ValueError as exc:
+            raise ValueError(f'{source_name} fila {start_index + offset}: {exc}') from exc
+
+    return prepared_rows
+
+
 def _dedupe_rows(config: TableConfig, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     deduped: dict[tuple[Any, ...], dict[str, Any]] = {}
     passthrough: list[dict[str, Any]] = []
@@ -1033,6 +1122,84 @@ def _build_import_result(datasets_by_table: dict[str, list[ParsedDataset]], dry_
         'total_rows': sum(item['rows'] for item in results),
         'total_created': sum(item['created'] for item in results),
         'total_updated': sum(item['updated'] for item in results),
+    }
+
+
+def _can_stream_single_delimited_upload(uploaded_files) -> bool:
+    if len(uploaded_files) != 1:
+        return False
+
+    uploaded_file = uploaded_files[0]
+    suffix = Path(uploaded_file.name).suffix.lower()
+    if suffix not in {'.csv', '.tsv', '.txt'}:
+        return False
+
+    table_key = _get_table_key(uploaded_file.name)
+    if not table_key:
+        return False
+
+    return TABLES[table_key].uses_explicit_pk
+
+
+def _build_streaming_import_result(uploaded_file, dry_run: bool, chunk_size: int | None = None) -> dict[str, Any]:
+    chunk_size = chunk_size or DELIMITED_STREAM_CHUNK_SIZE
+    table_key = _get_table_key(uploaded_file.name)
+    if not table_key:
+        raise ValueError(f'No se pudo identificar la tabla destino para "{uploaded_file.name}".')
+
+    config = TABLES[table_key]
+    context = ImportContext()
+    total_rows = 0
+    total_created = 0
+    total_updated = 0
+    row_start = 1
+    processed_chunks = 0
+
+    with transaction.atomic():
+        for dataframe in _iter_delimited_dataframes(uploaded_file, chunk_size=chunk_size):
+            raw_rows = _rows_from_dataframe(dataframe)
+            if not raw_rows:
+                continue
+
+            prepared_rows = _dedupe_rows(
+                config,
+                _prepare_chunk_rows(config, raw_rows, context, uploaded_file.name, start_index=row_start),
+            )
+            errors = _validate_required_keys_from(config, prepared_rows, uploaded_file.name, row_start)
+            errors.extend(_validate_foreign_keys(config, prepared_rows))
+            if config.extra_validator:
+                errors.extend(config.extra_validator(prepared_rows, context))
+            if errors:
+                raise ValueError('\n'.join(errors))
+
+            summary = _execute_upsert(config, prepared_rows, dry_run=dry_run)
+            total_rows += len(prepared_rows)
+            total_created += summary['created']
+            total_updated += summary['updated']
+            row_start += len(raw_rows)
+            processed_chunks += 1
+
+        if dry_run:
+            transaction.set_rollback(True)
+
+    if not processed_chunks:
+        raise ValueError(f'El archivo "{uploaded_file.name}" no contiene filas con datos.')
+
+    return {
+        'dry_run': dry_run,
+        'ordered_tables': [table_key],
+        'results': [
+            {
+                'table': table_key,
+                'label': config.label,
+                'rows': total_rows,
+                'created': total_created,
+                'updated': total_updated,
+            }
+        ],
+        'total_rows': total_rows,
+        'total_created': total_created,
+        'total_updated': total_updated,
     }
 
 
@@ -1148,6 +1315,11 @@ class DataSyncImportView(APIView):
         warnings: list[str] = []
 
         try:
+            if _can_stream_single_delimited_upload(uploaded_files):
+                result = _build_streaming_import_result(uploaded_files[0], dry_run=dry_run)
+                result['warnings'] = warnings
+                return Response(result)
+
             for uploaded_file in uploaded_files:
                 parsed, parse_warnings = _parse_upload(uploaded_file)
                 warnings.extend(parse_warnings)

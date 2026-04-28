@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework.test import APIClient
@@ -14,6 +16,7 @@ from maestros.models import (
     MaeUsuario,
     MaeVehiculo,
 )
+from movimientos.models import MovTicket
 
 
 def csv_file(name, rows):
@@ -145,6 +148,33 @@ class DataSyncApiTests(TestCase):
         )
         self.assertEqual(opcion.ch_codi_modulo_fk.ch_codi_modulo, '001')
         self.assertEqual(opcion.vc_desc_opcion, 'Clientes')
+
+    @patch('seguridad.data_exchange.DELIMITED_STREAM_CHUNK_SIZE', 1)
+    def test_import_streams_single_large_csv_for_explicit_pk_table(self):
+        response = self.client.post(
+            '/api/seguridad/data-sync/import/',
+            {
+                'dry_run': 'false',
+                'files': [
+                    csv_file(
+                        'MOV_TICKET.csv',
+                        [
+                            'NU_CODI_TICKET,CH_ESTA_TICKET,CH_TIPO_COMPROBANTE',
+                            '1,A,01',
+                            '2,C,02',
+                        ],
+                    ),
+                ],
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['ordered_tables'], ['MOV_TICKET'])
+        self.assertEqual(response.data['total_rows'], 2)
+        self.assertEqual(response.data['total_created'], 2)
+        self.assertTrue(MovTicket.objects.filter(nu_codi_ticket=1, ch_esta_ticket='A').exists())
+        self.assertTrue(MovTicket.objects.filter(nu_codi_ticket=2, ch_esta_ticket='C').exists())
 
     def test_export_csv_uses_legacy_headers(self):
         MaeCliente.objects.create(
