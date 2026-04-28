@@ -113,6 +113,11 @@ TIME_ZONE = 'America/Lima'
 USE_I18N = True
 USE_TZ = False
 
+# La importacion de CSV grandes debe ir siempre a disco temporal, no a memoria.
+FILE_UPLOAD_HANDLERS = [
+    'django.core.files.uploadhandler.TemporaryFileUploadHandler',
+]
+
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STORAGES = {

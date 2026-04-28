@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import io
 import re
 import zipfile
@@ -55,6 +56,8 @@ from movimientos.models import (
 from .permissions import IsAdministrador
 
 DELIMITED_STREAM_CHUNK_SIZE = 5000
+DELIMITED_SNIFF_SAMPLE_SIZE = 65536
+DELIMITED_SNIFF_CANDIDATES = (',', ';', '\t', '|')
 
 
 def _normalize_table_key(value: str | None) -> str:
@@ -233,13 +236,21 @@ def _rows_from_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
 
 def _read_delimited_bytes(file_bytes: bytes) -> pd.DataFrame:
     decode_errors: list[str] = []
-    for encoding in ('utf-8-sig', 'utf-8', 'latin-1'):
+    detected_format = _detect_delimited_format_from_bytes(file_bytes)
+    attempted_encodings = [detected_format['encoding']]
+    attempted_encodings.extend(
+        encoding for encoding in ('utf-8-sig', 'utf-8', 'latin-1')
+        if encoding != detected_format['encoding']
+    )
+
+    for encoding in attempted_encodings:
         try:
             text = file_bytes.decode(encoding)
+            delimiter = detected_format['delimiter'] if encoding == detected_format['encoding'] else _detect_delimiter(text)
             df = pd.read_csv(
                 io.StringIO(text),
-                sep=None,
-                engine='python',
+                sep=delimiter,
+                engine=_csv_engine_for(delimiter),
                 dtype=str,
                 keep_default_na=False,
             )
@@ -250,37 +261,66 @@ def _read_delimited_bytes(file_bytes: bytes) -> pd.DataFrame:
     raise ValueError('No se pudo leer el archivo delimitado. ' + ' | '.join(decode_errors))
 
 
-def _detect_delimited_encoding(uploaded_file) -> str:
+def _detect_delimiter(text: str) -> str:
+    sample_lines = text.splitlines()
+    sample = '\n'.join(sample_lines[:10]).strip()
+    if not sample:
+        return ','
+
     try:
-        sample = uploaded_file.read(65536)
+        dialect = csv.Sniffer().sniff(sample, delimiters=''.join(DELIMITED_SNIFF_CANDIDATES))
+        return dialect.delimiter
+    except csv.Error:
+        header = sample_lines[0] if sample_lines else sample
+        for delimiter in DELIMITED_SNIFF_CANDIDATES[1:]:
+            if delimiter in header and ',' not in header:
+                return delimiter
+        return ','
+
+
+def _csv_engine_for(delimiter: str) -> str:
+    return 'c' if delimiter in DELIMITED_SNIFF_CANDIDATES else 'python'
+
+
+def _detect_delimited_format_from_bytes(file_bytes: bytes) -> dict[str, str]:
+    sample = file_bytes[:DELIMITED_SNIFF_SAMPLE_SIZE]
+
+    for encoding in ('utf-8-sig', 'utf-8', 'latin-1'):
+        try:
+            text = sample.decode(encoding)
+            return {'encoding': encoding, 'delimiter': _detect_delimiter(text)}
+        except UnicodeDecodeError:
+            continue
+
+    text = sample.decode('latin-1', errors='ignore')
+    return {'encoding': 'latin-1', 'delimiter': _detect_delimiter(text)}
+
+
+def _detect_delimited_format(uploaded_file) -> dict[str, str]:
+    try:
+        sample = uploaded_file.read(DELIMITED_SNIFF_SAMPLE_SIZE)
     finally:
         uploaded_file.seek(0)
 
     if isinstance(sample, str):
-        return 'utf-8'
+        return {'encoding': 'utf-8', 'delimiter': _detect_delimiter(sample)}
 
-    for encoding in ('utf-8-sig', 'utf-8'):
-        try:
-            sample.decode(encoding)
-            return encoding
-        except UnicodeDecodeError:
-            continue
-    return 'latin-1'
+    return _detect_delimited_format_from_bytes(sample)
 
 
 def _iter_delimited_dataframes(uploaded_file, chunk_size: int | None = None):
     chunk_size = chunk_size or DELIMITED_STREAM_CHUNK_SIZE
-    encoding = _detect_delimited_encoding(uploaded_file)
+    detected_format = _detect_delimited_format(uploaded_file)
     text_stream = None
 
     try:
         uploaded_file.seek(0)
         binary_stream = getattr(uploaded_file, 'file', uploaded_file)
-        text_stream = io.TextIOWrapper(binary_stream, encoding=encoding, newline='')
+        text_stream = io.TextIOWrapper(binary_stream, encoding=detected_format['encoding'], newline='')
         reader = pd.read_csv(
             text_stream,
-            sep=None,
-            engine='python',
+            sep=detected_format['delimiter'],
+            engine=_csv_engine_for(detected_format['delimiter']),
             dtype=str,
             keep_default_na=False,
             chunksize=chunk_size,
@@ -645,6 +685,7 @@ class ParsedDataset:
 class ImportContext:
     def __init__(self):
         self._cache: dict[tuple[type[models.Model], tuple[Any, ...]], Any] = {}
+        self._related_key_cache: dict[tuple[type[models.Model], str], set[Any]] = {}
 
     def resolve_modulo_pk(self, codigo_sistema: str | None, codigo_modulo: str | None) -> int | None:
         key = (MaeModulo, (codigo_sistema, codigo_modulo))
@@ -665,6 +706,14 @@ class ImportContext:
         )
         self._cache[key] = modulo_id
         return modulo_id
+
+    def resolve_related_keys(self, related_model: type[models.Model], target_attname: str) -> set[Any]:
+        key = (related_model, target_attname)
+        if key not in self._related_key_cache:
+            self._related_key_cache[key] = set(
+                related_model.objects.values_list(target_attname, flat=True)
+            )
+        return self._related_key_cache[key]
 
 
 def _coerce_value(field: models.Field, raw_value: Any) -> Any:
@@ -699,6 +748,63 @@ def _coerce_value(field: models.Field, raw_value: Any) -> Any:
     return str(raw_value).strip()
 
 
+def _column_label(field: models.Field) -> str:
+    return field.db_column or field.name.upper()
+
+
+def _validate_decimal_constraints(field: models.DecimalField, value: Decimal) -> str | None:
+    digit_tuple = value.as_tuple().digits
+    exponent = value.as_tuple().exponent
+
+    if exponent >= 0:
+        digits = len(digit_tuple) + exponent
+        decimals = 0
+    else:
+        decimals = abs(exponent)
+        digits = max(len(digit_tuple), decimals)
+
+    whole_digits = digits - decimals
+
+    if field.max_digits is not None and digits > field.max_digits:
+        return f'La columna {_column_label(field)} excede la precision maxima de {field.max_digits} digitos.'
+
+    if field.decimal_places is not None and decimals > field.decimal_places:
+        return f'La columna {_column_label(field)} excede el maximo de {field.decimal_places} decimales.'
+
+    if (
+        field.max_digits is not None
+        and field.decimal_places is not None
+        and whole_digits > (field.max_digits - field.decimal_places)
+    ):
+        return (
+            f'La columna {_column_label(field)} excede el maximo de '
+            f'{field.max_digits - field.decimal_places} digitos enteros.'
+        )
+
+    return None
+
+
+def _validate_field_constraints(field: models.Field, value: Any) -> None:
+    if value is None:
+        return
+
+    constraint_field = field.target_field if field.is_relation else field
+    label = _column_label(field)
+
+    if isinstance(constraint_field, models.CharField):
+        max_length = getattr(constraint_field, 'max_length', None)
+        if max_length and len(str(value)) > max_length:
+            raise ValueError(
+                f'La columna {label} excede la longitud maxima de {max_length} caracteres.'
+            )
+        return
+
+    if isinstance(constraint_field, models.DecimalField):
+        error = _validate_decimal_constraints(constraint_field, value)
+        if error:
+            raise ValueError(f'{error} Valor recibido: "{_stringify(value)}".')
+
+
 def _serialize_field_value(model: type[models.Model], field: models.Field, instance: models.Model) -> Any:
     value = getattr(instance, field.attname)
 
@@ -724,7 +830,9 @@ def _default_import_transform(config: TableConfig, row: dict[str, Any], _: Impor
         if not attname:
             continue
         field = config.model._meta.get_field(attname[:-3] if attname.endswith('_id') and attname[:-3] in {item.name for item in config.model._meta.fields} else attname)
-        prepared[attname] = _coerce_value(field, raw_value)
+        coerced_value = _coerce_value(field, raw_value)
+        _validate_field_constraints(field, coerced_value)
+        prepared[attname] = coerced_value
 
     return prepared
 
@@ -940,6 +1048,7 @@ def _validate_required_keys_from(config: TableConfig, rows: list[dict[str, Any]]
 def _validate_foreign_keys(
     config: TableConfig,
     rows: list[dict[str, Any]],
+    context: ImportContext | None = None,
     imported_keys: dict[str, set[Any]] | None = None,
 ) -> list[str]:
     errors: list[str] = []
@@ -956,9 +1065,12 @@ def _validate_foreign_keys(
             continue
 
         target_attname = field.target_field.attname
-        existing = set(
-            field.related_model.objects.filter(**{f'{target_attname}__in': list(values)}).values_list(target_attname, flat=True)
-        )
+        if context is not None:
+            existing = context.resolve_related_keys(field.related_model, target_attname) & values
+        else:
+            existing = set(
+                field.related_model.objects.filter(**{f'{target_attname}__in': list(values)}).values_list(target_attname, flat=True)
+            )
 
         dep_key = TABLES_BY_MODEL.get(field.related_model)
         if dep_key and imported_keys and dep_key in imported_keys:
@@ -1099,7 +1211,7 @@ def _build_import_result(datasets_by_table: dict[str, list[ParsedDataset]], dry_
             config = TABLES[table_key]
             prepared_rows = _dedupe_rows(config, _prepare_rows(config, datasets_by_table[table_key], context))
             errors = _validate_required_keys(config, prepared_rows)
-            errors.extend(_validate_foreign_keys(config, prepared_rows, imported_keys))
+            errors.extend(_validate_foreign_keys(config, prepared_rows, context, imported_keys))
             if config.extra_validator:
                 errors.extend(config.extra_validator(prepared_rows, context))
 
@@ -1107,7 +1219,12 @@ def _build_import_result(datasets_by_table: dict[str, list[ParsedDataset]], dry_
                 all_errors.extend(errors)
                 continue
 
-            summary = _execute_upsert(config, prepared_rows, dry_run=dry_run)
+            try:
+                summary = _execute_upsert(config, prepared_rows, dry_run=dry_run)
+            except DatabaseError as exc:
+                raise ValueError(
+                    f'{config.key}: error al guardar los registros. {exc}'
+                ) from exc
 
             pk_attname = config.pk_attname
             imported_keys[table_key] = {
@@ -1181,13 +1298,18 @@ def _build_streaming_import_result(uploaded_file, dry_run: bool, chunk_size: int
                 _prepare_chunk_rows(config, raw_rows, context, uploaded_file.name, start_index=row_start),
             )
             errors = _validate_required_keys_from(config, prepared_rows, uploaded_file.name, row_start)
-            errors.extend(_validate_foreign_keys(config, prepared_rows))
+            errors.extend(_validate_foreign_keys(config, prepared_rows, context))
             if config.extra_validator:
                 errors.extend(config.extra_validator(prepared_rows, context))
             if errors:
                 raise ValueError('\n'.join(errors))
 
-            summary = _execute_upsert(config, prepared_rows, dry_run=dry_run)
+            try:
+                summary = _execute_upsert(config, prepared_rows, dry_run=dry_run)
+            except DatabaseError as exc:
+                raise ValueError(
+                    f'{config.key}: error al guardar los registros. {exc}'
+                ) from exc
             total_rows += len(prepared_rows)
             total_created += summary['created']
             total_updated += summary['updated']

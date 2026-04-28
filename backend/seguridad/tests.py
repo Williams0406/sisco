@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import DatabaseError
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -176,6 +177,83 @@ class DataSyncApiTests(TestCase):
         self.assertEqual(response.data['total_created'], 2)
         self.assertTrue(MovTicket.objects.filter(nu_codi_ticket=1, ch_esta_ticket='A').exists())
         self.assertTrue(MovTicket.objects.filter(nu_codi_ticket=2, ch_esta_ticket='C').exists())
+
+    def test_import_streams_semicolon_delimited_csv_for_explicit_pk_table(self):
+        response = self.client.post(
+            '/api/seguridad/data-sync/import/',
+            {
+                'dry_run': 'false',
+                'files': [
+                    csv_file(
+                        'MOV_TICKET.csv',
+                        [
+                            'NU_CODI_TICKET;CH_ESTA_TICKET;CH_TIPO_COMPROBANTE',
+                            '1;A;01',
+                            '2;C;02',
+                        ],
+                    ),
+                ],
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['ordered_tables'], ['MOV_TICKET'])
+        self.assertEqual(response.data['total_rows'], 2)
+        self.assertEqual(response.data['total_created'], 2)
+        self.assertTrue(MovTicket.objects.filter(nu_codi_ticket=1, ch_esta_ticket='A').exists())
+        self.assertTrue(MovTicket.objects.filter(nu_codi_ticket=2, ch_esta_ticket='C').exists())
+
+    def test_import_rejects_overlong_mov_ticket_char_values_before_hitting_db(self):
+        response = self.client.post(
+            '/api/seguridad/data-sync/import/',
+            {
+                'dry_run': 'false',
+                'files': [
+                    csv_file(
+                        'MOV_TICKET.csv',
+                        [
+                            'NU_CODI_TICKET,CH_ESTA_TICKET,CH_TIPO_COMPROBANTE',
+                            '1,AB,01',
+                        ],
+                    ),
+                ],
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(response.data['detail'], 'No se pudo completar la importacion.')
+        self.assertIn(
+            'MOV_TICKET.csv fila 1: La columna CH_ESTA_TICKET excede la longitud maxima de 1 caracteres.',
+            response.data['errors'],
+        )
+
+    @patch('seguridad.data_exchange._execute_upsert', side_effect=DatabaseError('error simulado de base de datos'))
+    def test_import_surfaces_database_write_errors_as_import_errors(self, _mock_execute_upsert):
+        response = self.client.post(
+            '/api/seguridad/data-sync/import/',
+            {
+                'dry_run': 'false',
+                'files': [
+                    csv_file(
+                        'MOV_TICKET.csv',
+                        [
+                            'NU_CODI_TICKET,CH_ESTA_TICKET,CH_TIPO_COMPROBANTE',
+                            '1,A,01',
+                        ],
+                    ),
+                ],
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(response.data['detail'], 'No se pudo completar la importacion.')
+        self.assertEqual(
+            response.data['errors'],
+            ['MOV_TICKET: error al guardar los registros. error simulado de base de datos'],
+        )
 
     def test_import_normalizes_numeric_char_codes_for_mov_ticket_dependencies(self):
         response = self.client.post(
