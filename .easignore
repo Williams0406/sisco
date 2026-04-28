@@ -1,0 +1,32 @@
+﻿# Proyectos hermanos
+backend
+csv_export
+frontend
+venv
+src
+
+# Git
+.git
+
+# Cache y builds
+**/node_modules
+**/.expo
+**/.next
+**/dist
+**/build
+**/coverage
+**/__pycache__
+
+# Archivos pesados
+**/*.log
+**/*.map
+**/*.pyc
+**/*.pyd
+
+# Entorno
+.env.local
+.env*.local
+
+# Sistema
+.DS_Store
+Thumbs.db

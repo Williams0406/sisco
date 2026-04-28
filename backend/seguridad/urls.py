@@ -1,6 +1,6 @@
 from rest_framework.routers import DefaultRouter
 from django.urls import path
-from .data_exchange import DataSyncCatalogView, DataSyncExportView, DataSyncImportView
+from .data_exchange import DataSyncCatalogView, DataSyncClearTableView, DataSyncExportView, DataSyncImportView
 from .views import UsuarioViewSet, PerfilViewSet, PerfilUsuarioViewSet, MeView, CajeroOptionsView
 
 router = DefaultRouter()
@@ -13,5 +13,6 @@ urlpatterns = [
     path('cajeros/', CajeroOptionsView.as_view()),
     path('data-sync/catalog/', DataSyncCatalogView.as_view()),
     path('data-sync/import/', DataSyncImportView.as_view()),
+    path('data-sync/clear/', DataSyncClearTableView.as_view()),
     path('data-sync/export/', DataSyncExportView.as_view()),
 ] + router.urls

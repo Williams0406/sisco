@@ -14,6 +14,10 @@ const initialFeedback = {
   totals: null,
 };
 
+function fileSignature(file) {
+  return `${file.name}::${file.size}::${file.lastModified}`;
+}
+
 function parseFilename(headers, fallback) {
   const disposition = headers?.['content-disposition'] || headers?.['Content-Disposition'] || '';
   const match = disposition.match(/filename="([^"]+)"/i);
@@ -41,6 +45,7 @@ export default function DataExchange() {
   const [files, setFiles] = useState([]);
   const [runningImport, setRunningImport] = useState(false);
   const [runningExport, setRunningExport] = useState(false);
+  const [runningClearTable, setRunningClearTable] = useState('');
   const [feedback, setFeedback] = useState(initialFeedback);
 
   const fetchCatalog = async () => {
@@ -74,7 +79,26 @@ export default function DataExchange() {
     return catalog.tables.reduce((sum, table) => sum + (selected.has(table.key) ? table.row_count : 0), 0);
   }, [catalog.tables, selectedTables]);
 
-  const importedFilesLabel = useMemo(() => files.map((file) => file.name), [files]);
+  const queuedFiles = useMemo(
+    () => files.map((file) => ({ key: fileSignature(file), name: file.name })),
+    [files],
+  );
+
+  const addFiles = (nextFiles) => {
+    setFiles((prev) => {
+      const merged = new Map(prev.map((file) => [fileSignature(file), file]));
+      nextFiles.forEach((file) => merged.set(fileSignature(file), file));
+      return Array.from(merged.values());
+    });
+  };
+
+  const removeFile = (fileKey) => {
+    setFiles((prev) => prev.filter((file) => fileSignature(file) !== fileKey));
+  };
+
+  const clearFiles = () => {
+    setFiles([]);
+  };
 
   const toggleTable = (tableKey) => {
     setSelectedTables((prev) =>
@@ -121,7 +145,12 @@ export default function DataExchange() {
       });
 
       if (!dryRun) {
-        await fetchCatalog();
+        clearFiles();
+        try {
+          await fetchCatalog();
+        } catch {
+          // La importacion ya termino; si falla el refresh no revertimos el mensaje de exito.
+        }
       }
     } catch (error) {
       setFeedback({
@@ -135,6 +164,47 @@ export default function DataExchange() {
       });
     } finally {
       setRunningImport(false);
+    }
+  };
+
+  const runClearTable = async (table) => {
+    const confirmed = window.confirm(
+      `Se eliminaran ${table.row_count} registros de ${table.label} (${table.key}). Esta accion no se puede deshacer.`,
+    );
+    if (!confirmed) return;
+
+    setRunningClearTable(table.key);
+    try {
+      const response = await api.post('/seguridad/data-sync/clear/', { table: table.key });
+      setFeedback({
+        kind: 'success',
+        message: `Se limpiaron ${response.data.deleted_rows} registros de ${response.data.label}.`,
+        results: [],
+        warnings: [],
+        errors: [],
+        orderedTables: [response.data.table],
+        totals: null,
+      });
+      try {
+        await fetchCatalog();
+      } catch {
+        // El borrado ya se completo; mantenemos el mensaje de exito aunque falle el refresh.
+      }
+    } catch (error) {
+      const blockingErrors = (error?.response?.data?.blocking_tables || []).map(
+        (item) => `${item.label} (${item.key}) aun tiene ${item.row_count} registros.`,
+      );
+      setFeedback({
+        kind: 'error',
+        message: toMessage(error, 'No se pudo limpiar la tabla.'),
+        results: [],
+        warnings: [],
+        errors: [...blockingErrors, ...(error?.response?.data?.errors || [])],
+        orderedTables: [],
+        totals: null,
+      });
+    } finally {
+      setRunningClearTable('');
     }
   };
 
@@ -215,16 +285,30 @@ export default function DataExchange() {
                 Usa nombres como `MAE_CLIENTE.csv`, `MOV_TICKET.csv` o un Excel con hojas llamadas igual que las tablas.
               </p>
             </div>
-            <label style={styles.uploadButton}>
-              Seleccionar archivos
-              <input
-                type="file"
-                accept={FILE_ACCEPT}
-                multiple
-                style={{ display: 'none' }}
-                onChange={(event) => setFiles(Array.from(event.target.files || []))}
-              />
-            </label>
+            <div style={styles.inlineActions}>
+              <label style={styles.uploadButton}>
+                Agregar archivos
+                <input
+                  type="file"
+                  accept={FILE_ACCEPT}
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(event) => {
+                    const nextFiles = Array.from(event.target.files || []);
+                    if (nextFiles.length) addFiles(nextFiles);
+                    event.target.value = '';
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                style={styles.ghostButton}
+                disabled={runningImport || queuedFiles.length === 0}
+                onClick={clearFiles}
+              >
+                Vaciar lista
+              </button>
+            </div>
           </div>
 
           <div style={styles.dropZone}>
@@ -233,11 +317,19 @@ export default function DataExchange() {
               CSV, TXT delimitado, Excel `.xlsx/.xlsm` y ZIP con varios archivos.
             </span>
             <div style={styles.fileList}>
-              {importedFilesLabel.length === 0 && <span style={styles.fileChipMuted}>No hay archivos seleccionados</span>}
-              {importedFilesLabel.map((name) => (
-                <span key={name} style={styles.fileChip}>
-                  {name}
-                </span>
+              {queuedFiles.length === 0 && <span style={styles.fileChipMuted}>No hay archivos seleccionados</span>}
+              {queuedFiles.map((file) => (
+                <div key={file.key} style={styles.fileChip}>
+                  <span style={styles.fileChipName}>{file.name}</span>
+                  <button
+                    type="button"
+                    style={styles.fileRemoveButton}
+                    disabled={runningImport}
+                    onClick={() => removeFile(file.key)}
+                  >
+                    Quitar
+                  </button>
+                </div>
               ))}
             </div>
           </div>
@@ -299,24 +391,36 @@ export default function DataExchange() {
                     {tables.map((table) => {
                       const checked = selectedTables.includes(table.key);
                       return (
-                        <button
+                        <div
                           key={table.key}
-                          type="button"
-                          onClick={() => toggleTable(table.key)}
                           style={{
-                            ...styles.tableButton,
-                            ...(checked ? styles.tableButtonActive : {}),
+                            ...styles.tableCard,
+                            ...(checked ? styles.tableCardActive : {}),
                           }}
                         >
-                          <div>
-                            <strong style={styles.tableLabel}>{table.label}</strong>
-                            <div style={styles.tableCode}>{table.key}</div>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleTable(table.key)}
+                            style={styles.tableSelectButton}
+                          >
+                            <div>
+                              <strong style={styles.tableLabel}>{table.label}</strong>
+                              <div style={styles.tableCode}>{table.key}</div>
+                            </div>
+                          </button>
                           <div style={styles.tableBadgeWrap}>
                             <span style={styles.tableCount}>{table.row_count}</span>
                             {checked && <span style={styles.tableSelected}>Seleccionada</span>}
+                            <button
+                              type="button"
+                              style={styles.dangerGhostButton}
+                              disabled={Boolean(runningClearTable) || runningImport || runningExport}
+                              onClick={() => runClearTable(table)}
+                            >
+                              {runningClearTable === table.key ? 'Limpiando...' : 'Limpiar tabla'}
+                            </button>
                           </div>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -623,6 +727,22 @@ const styles = {
     color: '#1d4ed8',
     fontWeight: 700,
     fontSize: theme.typography.body,
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+  },
+  fileChipName: {
+    color: '#1d4ed8',
+  },
+  fileRemoveButton: {
+    border: 'none',
+    background: '#bfdbfe',
+    color: '#1d4ed8',
+    borderRadius: theme.radius.pill,
+    padding: '4px 8px',
+    fontSize: theme.typography.small,
+    fontWeight: 800,
+    cursor: 'pointer',
   },
   fileChipMuted: {
     padding: '8px 10px',
@@ -722,7 +842,7 @@ const styles = {
     flexDirection: 'column',
     gap: 8,
   },
-  tableButton: {
+  tableCard: {
     border: `1px solid ${theme.colors.border}`,
     background: '#fff',
     borderRadius: theme.radius.md,
@@ -734,10 +854,18 @@ const styles = {
     cursor: 'pointer',
     textAlign: 'left',
   },
-  tableButtonActive: {
+  tableCardActive: {
     borderColor: '#60a5fa',
     background: '#eff6ff',
     boxShadow: 'inset 0 0 0 1px rgba(37, 99, 235, 0.1)',
+  },
+  tableSelectButton: {
+    flex: 1,
+    border: 'none',
+    background: 'transparent',
+    padding: 0,
+    textAlign: 'left',
+    cursor: 'pointer',
   },
   tableLabel: {
     color: theme.colors.text,
@@ -752,6 +880,16 @@ const styles = {
     flexDirection: 'column',
     alignItems: 'flex-end',
     gap: 6,
+  },
+  dangerGhostButton: {
+    background: '#fff1f2',
+    color: '#be123c',
+    border: '1px solid #fecdd3',
+    borderRadius: theme.radius.sm,
+    padding: '7px 10px',
+    fontSize: theme.typography.small,
+    fontWeight: 800,
+    cursor: 'pointer',
   },
   tableCount: {
     background: '#f1f5f9',

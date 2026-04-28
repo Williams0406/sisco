@@ -169,3 +169,61 @@ class DataSyncApiTests(TestCase):
         self.assertIn('0001', row)
         self.assertIn('Cliente exportado', row)
         self.assertIn('A', row)
+
+    def test_clear_table_removes_rows_when_no_dependents_exist(self):
+        MaeCliente.objects.create(
+            ch_codi_cliente='0001',
+            vc_razo_soci_cliente='Cliente limpio',
+            ch_esta_activo=True,
+        )
+
+        response = self.client.post(
+            '/api/seguridad/data-sync/clear/',
+            {'table': 'MAE_CLIENTE'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['table'], 'MAE_CLIENTE')
+        self.assertEqual(response.data['deleted_rows'], 1)
+        self.assertFalse(MaeCliente.objects.filter(ch_codi_cliente='0001').exists())
+
+    def test_clear_table_rejects_when_supported_dependents_have_rows(self):
+        cliente = MaeCliente.objects.create(
+            ch_codi_cliente='0001',
+            vc_razo_soci_cliente='Cliente con vehiculo',
+            ch_esta_activo=True,
+        )
+        chofer = MaeChofer.objects.create(
+            ch_codi_chofer='0001',
+            vc_desc_chofer='Chofer demo',
+            ch_esta_activo=True,
+        )
+        tipo = MaeTipoVehiculo.objects.create(
+            ch_tipo_vehiculo='01',
+            vc_desc_tipo_vehiculo='Camion',
+            ch_esta_activo=True,
+        )
+        MaeVehiculo.objects.create(
+            ch_codi_vehiculo='000001',
+            ch_plac_vehiculo='ABC-123',
+            ch_tipo_vehiculo=tipo,
+            ch_codi_cliente=cliente,
+            ch_codi_chofer=chofer,
+            ch_esta_activo=True,
+            ch_esta_parqueado=False,
+        )
+
+        response = self.client.post(
+            '/api/seguridad/data-sync/clear/',
+            {'table': 'MAE_CLIENTE'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(
+            response.data['detail'],
+            'No se puede limpiar la tabla mientras existan registros en tablas dependientes.',
+        )
+        self.assertEqual(response.data['blocking_tables'][0]['key'], 'MAE_VEHICULO')
+        self.assertTrue(MaeCliente.objects.filter(ch_codi_cliente='0001').exists())

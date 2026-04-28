@@ -12,7 +12,7 @@ from typing import Any, Callable
 import pandas as pd
 from django.conf import settings
 from django.core.management.color import no_style
-from django.db import connection, models, transaction
+from django.db import DatabaseError, connection, models, transaction
 from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -1088,6 +1088,41 @@ def _build_catalog() -> dict[str, Any]:
     }
 
 
+def _dependent_table_keys(table_key: str) -> list[str]:
+    ordered = _order_table_keys(list(TABLES.keys()))
+    return [candidate_key for candidate_key in ordered if table_key in TABLES[candidate_key].dependencies]
+
+
+def _blocking_tables_for_clear(table_key: str) -> list[dict[str, Any]]:
+    blocking_tables: list[dict[str, Any]] = []
+    for dependent_key in _dependent_table_keys(table_key):
+        dependent_config = TABLES[dependent_key]
+        row_count = dependent_config.model.objects.count()
+        if row_count:
+            blocking_tables.append(
+                {
+                    'key': dependent_key,
+                    'label': dependent_config.label,
+                    'row_count': row_count,
+                }
+            )
+    return blocking_tables
+
+
+def _clear_table(config: TableConfig) -> int:
+    deleted_rows = config.model.objects.count()
+    quoted_table_name = connection.ops.quote_name(config.model._meta.db_table)
+
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(f'DELETE FROM {quoted_table_name}')
+        for sql in _sequence_reset_sql(config.model):
+            with connection.cursor() as cursor:
+                cursor.execute(sql)
+
+    return deleted_rows
+
+
 class DataSyncCatalogView(APIView):
     permission_classes = [IsAdministrador]
 
@@ -1141,6 +1176,51 @@ class DataSyncImportView(APIView):
 
         result['warnings'] = warnings
         return Response(result)
+
+
+class DataSyncClearTableView(APIView):
+    permission_classes = [IsAdministrador]
+    parser_classes = [JSONParser]
+
+    def post(self, request):
+        raw_table = str(request.data.get('table') or '').strip()
+        table_key = _get_table_key(raw_table) or raw_table
+
+        if table_key not in TABLES:
+            return Response(
+                {'detail': 'Debes indicar una tabla soportada para limpiar.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        config = TABLES[table_key]
+        blocking_tables = _blocking_tables_for_clear(table_key)
+        if blocking_tables:
+            return Response(
+                {
+                    'detail': 'No se puede limpiar la tabla mientras existan registros en tablas dependientes.',
+                    'blocking_tables': blocking_tables,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            deleted_rows = _clear_table(config)
+        except DatabaseError as exc:
+            return Response(
+                {
+                    'detail': f'No se pudo limpiar la tabla {table_key}.',
+                    'errors': [str(exc)],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {
+                'table': table_key,
+                'label': config.label,
+                'deleted_rows': deleted_rows,
+            }
+        )
 
 
 class DataSyncExportView(APIView):
