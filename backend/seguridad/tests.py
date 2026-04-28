@@ -7,6 +7,7 @@ from rest_framework.test import APIClient
 from maestros.models import (
     MaeChofer,
     MaeCliente,
+    MaeGarita,
     MaeModulo,
     MaeOpcion,
     MaePerfil,
@@ -16,7 +17,7 @@ from maestros.models import (
     MaeUsuario,
     MaeVehiculo,
 )
-from movimientos.models import MovTicket
+from movimientos.models import DetTarifario, MovTicket
 
 
 def csv_file(name, rows):
@@ -175,6 +176,82 @@ class DataSyncApiTests(TestCase):
         self.assertEqual(response.data['total_created'], 2)
         self.assertTrue(MovTicket.objects.filter(nu_codi_ticket=1, ch_esta_ticket='A').exists())
         self.assertTrue(MovTicket.objects.filter(nu_codi_ticket=2, ch_esta_ticket='C').exists())
+
+    def test_import_normalizes_numeric_char_codes_for_mov_ticket_dependencies(self):
+        response = self.client.post(
+            '/api/seguridad/data-sync/import/',
+            {
+                'dry_run': 'false',
+                'files': [
+                    csv_file(
+                        'MOV_TICKET.csv',
+                        [
+                            'NU_CODI_TICKET,CH_CODI_GARITA,CH_CODI_VEHICULO,CH_CODI_CLIENTE,CH_CODI_CHOFER,CH_CODI_TARIFARIO,CH_ESTA_TICKET,CH_TIPO_COMPROBANTE',
+                            '1,GAR,1,1,1.0,1.0,A,1.0',
+                        ],
+                    ),
+                    csv_file(
+                        'DET_TARIFARIO.csv',
+                        [
+                            'CH_CODI_TARIFARIO,CH_TIPO_VEHICULO,CH_CODI_CLIENTE,NU_IMPO_DIA,NU_IMPO_NOCHE,CH_ESTA_ACTIVO',
+                            '1,1,1,10,20,A',
+                        ],
+                    ),
+                    csv_file(
+                        'MAE_VEHICULO.csv',
+                        [
+                            'CH_CODI_VEHICULO,CH_PLAC_VEHICULO,CH_TIPO_VEHICULO,CH_CODI_CLIENTE,CH_CODI_CHOFER,CH_ESTA_ACTIVO,CH_ESTA_PARQUEADO',
+                            '1,ABC123,1,1,1,A,N',
+                        ],
+                    ),
+                    csv_file(
+                        'MAE_GARITA.csv',
+                        [
+                            'CH_CODI_GARITA,VC_DESC_GARITA,CH_ESTA_ACTIVO',
+                            'GAR,Garita demo,A',
+                        ],
+                    ),
+                    csv_file(
+                        'MAE_CLIENTE.csv',
+                        [
+                            'CH_CODI_CLIENTE,VC_RAZO_SOCI_CLIENTE,CH_ESTA_ACTIVO',
+                            '1,Cliente demo,A',
+                        ],
+                    ),
+                    csv_file(
+                        'MAE_CHOFER.csv',
+                        [
+                            'CH_CODI_CHOFER,VC_DESC_CHOFER,CH_ESTA_ACTIVO',
+                            '1,Chofer demo,A',
+                        ],
+                    ),
+                    csv_file(
+                        'MAE_TIPO_VEHICULO.csv',
+                        [
+                            'CH_TIPO_VEHICULO,VC_DESC_TIPO_VEHICULO,CH_ESTA_ACTIVO',
+                            '1,Camion,A',
+                        ],
+                    ),
+                ],
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(MaeGarita.objects.filter(ch_codi_garita='GAR').exists())
+        self.assertTrue(MaeCliente.objects.filter(ch_codi_cliente='0001').exists())
+        self.assertTrue(MaeChofer.objects.filter(ch_codi_chofer='0001').exists())
+        self.assertTrue(MaeTipoVehiculo.objects.filter(ch_tipo_vehiculo='01').exists())
+        self.assertTrue(MaeVehiculo.objects.filter(ch_codi_vehiculo='000001').exists())
+        self.assertTrue(DetTarifario.objects.filter(ch_codi_tarifario='000001').exists())
+
+        ticket = MovTicket.objects.get(nu_codi_ticket=1)
+        self.assertEqual(ticket.ch_codi_garita_id, 'GAR')
+        self.assertEqual(ticket.ch_codi_vehiculo_id, '000001')
+        self.assertEqual(ticket.ch_codi_cliente_id, '0001')
+        self.assertEqual(ticket.ch_codi_chofer_id, '0001')
+        self.assertEqual(ticket.ch_codi_tarifario_id, '000001')
+        self.assertEqual(ticket.ch_tipo_comprobante, '1')
 
     def test_export_csv_uses_legacy_headers(self):
         MaeCliente.objects.create(

@@ -91,6 +91,29 @@ def _stringify(value: Any) -> str:
     return str(value).strip()
 
 
+INTEGER_LIKE_CHAR_PATTERN = re.compile(r'^\d+\.0+$')
+
+
+def _normalize_char_value(field: models.Field, raw_value: Any) -> str | None:
+    if _is_blank(raw_value):
+        return None
+
+    normalized = str(raw_value).strip()
+    if INTEGER_LIKE_CHAR_PATTERN.fullmatch(normalized):
+        normalized = normalized.split('.', 1)[0]
+
+    if (
+        isinstance(field, models.CharField)
+        and field.primary_key
+        and getattr(field, 'max_length', None)
+        and normalized.isdigit()
+        and len(normalized) < field.max_length
+    ):
+        normalized = normalized.zfill(field.max_length)
+
+    return normalized
+
+
 def _serialize_datetime(value: datetime | None) -> str | None:
     if value is None:
         return None
@@ -655,18 +678,10 @@ def _coerce_value(field: models.Field, raw_value: Any) -> Any:
                 return None
             if isinstance(relation_field, models.CharField) and coerced == '0':
                 return None
-        # Normalizar ancho si el campo destino es CharField con max_length
-        if (
-            isinstance(relation_field, models.CharField)
-            and coerced is not None
-            and hasattr(relation_field, 'max_length')
-            and relation_field.max_length
-            and coerced.isdigit()
-            and len(coerced) < relation_field.max_length
-        ):
-            coerced = coerced.zfill(relation_field.max_length)
         return coerced
 
+    if isinstance(field, models.CharField):
+        return _normalize_char_value(field, raw_value)
     if isinstance(field, models.BooleanField):
         return _deserialize_boolean(raw_value)
     if isinstance(field, models.DecimalField):
