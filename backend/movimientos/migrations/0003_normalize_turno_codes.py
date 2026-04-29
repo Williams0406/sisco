@@ -27,6 +27,7 @@ def normalize_turno_codes(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    atomic = False
 
     dependencies = [
         ('movimientos', '0002_alter_cabcierreturno_ch_codi_turno_caja_and_more'),
