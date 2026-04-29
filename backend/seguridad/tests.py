@@ -13,12 +13,13 @@ from maestros.models import (
     MaeOpcion,
     MaePerfil,
     MaePerfilMaeUsuario,
+    MaeProveedor,
     MaeSistema,
     MaeTipoVehiculo,
     MaeUsuario,
     MaeVehiculo,
 )
-from movimientos.models import DetTarifario, MovTicket
+from movimientos.models import CabReciboEgreso, DetTarifario, MovTicket
 
 
 def csv_file(name, rows):
@@ -385,6 +386,72 @@ class DataSyncApiTests(TestCase):
             'CAB_RECIBO_EGRESO: faltan referencias para ch_codi_proveedor_id en MAE_PROVEEDOR: 0001. Importa MAE_PROVEEDOR antes o junto con CAB_RECIBO_EGRESO.',
             response.data['errors'],
         )
+
+    def test_import_matches_legacy_unpadded_provider_codes_in_database(self):
+        MaeProveedor.objects.create(
+            ch_codi_proveedor='0',
+            vc_razo_soci_prov='Proveedor legacy',
+            ch_esta_activo=True,
+        )
+
+        response = self.client.post(
+            '/api/seguridad/data-sync/import/',
+            {
+                'dry_run': 'false',
+                'files': [
+                    csv_file(
+                        'MAE_TIPO_EGRESO.csv',
+                        [
+                            'CH_CODI_TIPO_EGRESO,VC_DESC_TIPO_EGRESO,CH_ESTA_ACTIVO',
+                            '011,Viaticos,A',
+                        ],
+                    ),
+                    csv_file(
+                        'CAB_RECIBO_EGRESO.csv',
+                        [
+                            'NU_CODI_RECIBO,CH_CODI_TIPO_EGRESO,CH_CODI_PROVEEDOR,CH_ESTA_ACTIVO',
+                            '1,011,0000,A',
+                        ],
+                    ),
+                ],
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(MaeProveedor.objects.filter(ch_codi_proveedor='0').exists())
+        recibo = CabReciboEgreso.objects.get(nu_codi_recibo=1)
+        self.assertEqual(recibo.ch_codi_proveedor_id, '0')
+
+    def test_import_updates_legacy_unpadded_provider_row_without_creating_duplicate(self):
+        MaeProveedor.objects.create(
+            ch_codi_proveedor='0',
+            vc_razo_soci_prov='Proveedor legacy',
+            ch_esta_activo=True,
+        )
+
+        response = self.client.post(
+            '/api/seguridad/data-sync/import/',
+            {
+                'dry_run': 'false',
+                'files': [
+                    csv_file(
+                        'MAE_PROVEEDOR.csv',
+                        [
+                            'CH_CODI_PROVEEDOR,VC_RAZO_SOCI_PROV,CH_ESTA_ACTIVO',
+                            '0000,Proveedor normalizado,A',
+                        ],
+                    ),
+                ],
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(MaeProveedor.objects.count(), 1)
+        proveedor = MaeProveedor.objects.get()
+        self.assertEqual(proveedor.ch_codi_proveedor, '0')
+        self.assertEqual(proveedor.vc_razo_soci_prov, 'Proveedor normalizado')
 
     def test_export_csv_uses_legacy_headers(self):
         MaeCliente.objects.create(

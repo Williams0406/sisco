@@ -688,6 +688,7 @@ class ImportContext:
     def __init__(self):
         self._cache: dict[tuple[type[models.Model], tuple[Any, ...]], Any] = {}
         self._related_key_cache: dict[tuple[type[models.Model], str], set[Any]] = {}
+        self._char_key_alias_cache: dict[tuple[type[models.Model], str], tuple[dict[str, Any], dict[str, Any]]] = {}
 
     def resolve_modulo_pk(self, codigo_sistema: str | None, codigo_modulo: str | None) -> int | None:
         key = (MaeModulo, (codigo_sistema, codigo_modulo))
@@ -716,6 +717,56 @@ class ImportContext:
                 related_model.objects.values_list(target_attname, flat=True)
             )
         return self._related_key_cache[key]
+
+    def resolve_char_key_alias(self, model: type[models.Model], attname: str, value: Any) -> Any:
+        if _is_blank(value):
+            return value
+
+        field = model._meta.get_field(attname)
+        if not isinstance(field, models.CharField):
+            return value
+
+        key = (model, attname)
+        if key not in self._char_key_alias_cache:
+            exact_map: dict[str, Any] = {}
+            normalized_map: dict[str, Any] = {}
+
+            for existing_value in model.objects.values_list(attname, flat=True):
+                if _is_blank(existing_value):
+                    continue
+
+                existing_text = str(existing_value).strip()
+                exact_map[existing_text] = existing_value
+
+                normalized_value = _normalize_char_value(field, existing_value)
+                if normalized_value is None:
+                    continue
+
+                if normalized_value not in normalized_map or existing_text == normalized_value:
+                    normalized_map[normalized_value] = existing_value
+
+            self._char_key_alias_cache[key] = (exact_map, normalized_map)
+
+        exact_map, normalized_map = self._char_key_alias_cache[key]
+        requested_text = str(value).strip()
+        if requested_text in exact_map:
+            return exact_map[requested_text]
+
+        normalized_value = _normalize_char_value(field, value)
+        if normalized_value is not None and normalized_value in normalized_map:
+            return normalized_map[normalized_value]
+
+        return value
+
+    def invalidate_model_cache(self, model: type[models.Model]) -> None:
+        self._related_key_cache = {
+            key: cached for key, cached in self._related_key_cache.items()
+            if key[0] is not model
+        }
+        self._char_key_alias_cache = {
+            key: cached for key, cached in self._char_key_alias_cache.items()
+            if key[0] is not model
+        }
 
 
 def _coerce_value(field: models.Field, raw_value: Any) -> Any:
@@ -815,6 +866,37 @@ def _validate_field_constraints(field: models.Field, value: Any) -> None:
         error = _validate_decimal_constraints(constraint_field, value)
         if error:
             raise ValueError(f'{error} Valor recibido: "{_stringify(value)}".')
+
+
+def _resolve_database_char_aliases_for_row(
+    config: TableConfig,
+    row: dict[str, Any],
+    context: ImportContext,
+) -> dict[str, Any]:
+    key_fields = set(config.natural_key)
+    key_fields.add(config.pk_attname)
+
+    for field in config.model._meta.concrete_fields:
+        value = row.get(field.attname)
+        if value in (None, ''):
+            continue
+
+        if field.is_relation and isinstance(field.target_field, models.CharField):
+            row[field.attname] = context.resolve_char_key_alias(
+                field.related_model,
+                field.target_field.attname,
+                value,
+            )
+            continue
+
+        if isinstance(field, models.CharField) and field.attname in key_fields:
+            row[field.attname] = context.resolve_char_key_alias(
+                config.model,
+                field.attname,
+                value,
+            )
+
+    return row
 
 
 def _serialize_field_value(model: type[models.Model], field: models.Field, instance: models.Model) -> Any:
@@ -1177,7 +1259,8 @@ def _prepare_rows(config: TableConfig, datasets: list[ParsedDataset], context: I
     for dataset in datasets:
         for index, row in enumerate(dataset.rows, start=1):
             try:
-                prepared_rows.append(transform(row, context))
+                prepared_row = transform(row, context)
+                prepared_rows.append(_resolve_database_char_aliases_for_row(config, prepared_row, context))
             except ValueError as exc:
                 raise ValueError(f'{dataset.source_name} fila {index}: {exc}') from exc
 
@@ -1196,7 +1279,8 @@ def _prepare_chunk_rows(
 
     for offset, row in enumerate(rows):
         try:
-            prepared_rows.append(transform(row, context))
+            prepared_row = transform(row, context)
+            prepared_rows.append(_resolve_database_char_aliases_for_row(config, prepared_row, context))
         except ValueError as exc:
             raise ValueError(f'{source_name} fila {start_index + offset}: {exc}') from exc
 
@@ -1243,6 +1327,7 @@ def _build_import_result(datasets_by_table: dict[str, list[ParsedDataset]], dry_
                 raise ValueError(
                     f'{config.key}: error al guardar los registros. {exc}'
                 ) from exc
+            context.invalidate_model_cache(config.model)
 
             pk_attname = config.pk_attname
             imported_keys[table_key] = {
@@ -1328,6 +1413,7 @@ def _build_streaming_import_result(uploaded_file, dry_run: bool, chunk_size: int
                 raise ValueError(
                     f'{config.key}: error al guardar los registros. {exc}'
                 ) from exc
+            context.invalidate_model_cache(config.model)
             total_rows += len(prepared_rows)
             total_created += summary['created']
             total_updated += summary['updated']
