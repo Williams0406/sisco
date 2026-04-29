@@ -1082,8 +1082,14 @@ def _validate_foreign_keys(
 
         preview = ', '.join(_stringify(value) for value in missing[:5])
         suffix = '...' if len(missing) > 5 else ''
+        dependency_label = dep_key or field.related_model._meta.db_table
+        hint = (
+            f' Importa {dependency_label} antes o junto con {config.key}.'
+            if dep_key else ''
+        )
         errors.append(
-            f'{config.key}: faltan referencias para {field.attname}: {preview}{suffix}'
+            f'{config.key}: faltan referencias para {field.attname} en {dependency_label}: '
+            f'{preview}{suffix}.{hint}'
         )
 
     return errors
