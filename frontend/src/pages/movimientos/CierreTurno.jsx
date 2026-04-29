@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import api from '../../api/axios';
+import { TURNO_DIA, TURNO_NOCHE, formatTurno } from '../../utils/turno';
 
 const GARITA_LABEL = 'Garita';
 const DEFAULT_GARITA_CODE = 'GAR';
@@ -25,11 +26,7 @@ const formatDateTimeText = (value) => {
   });
 };
 
-const toFriendlyTurno = (value) => {
-  if (value === 'dia') return 'Dia';
-  if (value === 'noche') return 'Noche';
-  return value || 'Pendiente';
-};
+const toFriendlyTurno = (value) => formatTurno(value, { withCode: true, fallback: 'Pendiente' });
 
 const toFriendlyTipo = (value) => {
   if (value === 'T') return 'Turno';
@@ -62,8 +59,8 @@ const inferTurno = (value, configTurno) => {
   const nocheStart = toMinutes(configTurno.tm_hora_inicio_noche);
   const nocheEnd = toMinutes(configTurno.tm_hora_fin_noche);
 
-  if (isWithinRange(minutes, diaStart, diaEnd)) return 'dia';
-  if (isWithinRange(minutes, nocheStart, nocheEnd)) return 'noche';
+  if (isWithinRange(minutes, diaStart, diaEnd)) return TURNO_DIA;
+  if (isWithinRange(minutes, nocheStart, nocheEnd)) return TURNO_NOCHE;
   return '';
 };
 

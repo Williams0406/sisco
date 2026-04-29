@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import api from '../../api/axios';
 import DataTable from '../../components/DataTable';
 import { theme } from '../../styles/tokens';
+import { formatTurno } from '../../utils/turno';
 
 const formatDate = (value) => {
   if (!value) return '-';
@@ -86,7 +87,7 @@ export default function CobranzaDiaria() {
           id: `${detalle.nu_codi_cobr_cred}-${detalle.nu_codi_detalle}`,
           ticket: `${detalle.ticket_serie || detalle.ch_seri_tckt || '-'}-${detalle.ticket_numero || detalle.ch_nume_tckt || '-'}`,
           fecha: cobranza.dt_fech_cobr,
-          turno: cobranza.ch_codi_turno_caja || '-',
+          turno: formatTurno(cobranza.ch_codi_turno_caja, { withCode: true }),
           comprobante: `${cobranza.ch_seri_cobr || '-'}-${cobranza.ch_nume_cobr || '-'}`,
           vehiculo: detalle.ch_plac_vehiculo || ticket?.vehiculo_placa || '-',
           cliente: cobranza.cliente_desc || '-',

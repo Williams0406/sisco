@@ -51,6 +51,7 @@ from movimientos.models import (
     DetCobranzaCredito,
     DetTarifario,
     MovTicket,
+    _normalize_turno_code,
 )
 
 from .permissions import IsAdministrador
@@ -58,6 +59,7 @@ from .permissions import IsAdministrador
 DELIMITED_STREAM_CHUNK_SIZE = 5000
 DELIMITED_SNIFF_SAMPLE_SIZE = 65536
 DELIMITED_SNIFF_CANDIDATES = (',', ';', '\t', '|')
+SHIFT_CODE_FIELDS = {'ch_codi_turno_caja', 'ch_codi_turno_sld'}
 
 
 def _normalize_table_key(value: str | None) -> str:
@@ -730,7 +732,17 @@ def _coerce_value(field: models.Field, raw_value: Any) -> Any:
         return coerced
 
     if isinstance(field, models.CharField):
-        return _normalize_char_value(field, raw_value)
+        normalized_value = _normalize_char_value(field, raw_value)
+        if field.attname in SHIFT_CODE_FIELDS:
+            if normalized_value is None:
+                return None
+            normalized_shift = _normalize_turno_code(normalized_value)
+            if normalized_shift is None:
+                raise ValueError(
+                    f'La columna {_column_label(field)} solo admite valores 1 (dia) y 2 (noche).'
+                )
+            return normalized_shift
+        return normalized_value
     if isinstance(field, models.BooleanField):
         return _deserialize_boolean(raw_value)
     if isinstance(field, models.DecimalField):

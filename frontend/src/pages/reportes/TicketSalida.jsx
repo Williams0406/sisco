@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import api from '../../api/axios';
 import { theme } from '../../styles/tokens';
+import { formatTurno, normalizeTurno } from '../../utils/turno';
 
 const formatDateTime = (value) => {
   if (!value) return '-';
@@ -81,7 +82,7 @@ export default function TicketSalida() {
         const fecha = row.dt_fech_salida ? new Date(row.dt_fech_salida) : null;
         if (desde && (!fecha || fecha < desde)) return false;
         if (hasta && (!fecha || fecha > hasta)) return false;
-        if (filtros.turno && row.ch_codi_turno_caja !== filtros.turno) return false;
+        if (filtros.turno && normalizeTurno(row.ch_codi_turno_caja) !== filtros.turno) return false;
         if (filtros.cliente && String(row.ch_codi_cliente || '') !== filtros.cliente) return false;
         if (filtros.garita && String(row.ch_codi_garita || '') !== filtros.garita) return false;
         if (filtros.vehiculo && !String(row.vehiculo_placa || '').toLowerCase().includes(filtros.vehiculo.toLowerCase())) return false;
@@ -110,7 +111,13 @@ export default function TicketSalida() {
         <div style={styles.filtersGrid}>
           <FilterField label="Fecha desde"><input type="date" style={styles.input} value={filtros.fecha_desde} onChange={(e) => setFiltros((p) => ({ ...p, fecha_desde: e.target.value }))} /></FilterField>
           <FilterField label="Fecha hasta"><input type="date" style={styles.input} value={filtros.fecha_hasta} onChange={(e) => setFiltros((p) => ({ ...p, fecha_hasta: e.target.value }))} /></FilterField>
-          <FilterField label="Turno"><input type="text" style={styles.input} value={filtros.turno} onChange={(e) => setFiltros((p) => ({ ...p, turno: e.target.value }))} placeholder="Ej: T1" /></FilterField>
+          <FilterField label="Turno">
+            <select style={styles.input} value={filtros.turno} onChange={(e) => setFiltros((p) => ({ ...p, turno: e.target.value }))}>
+              <option value="">Todos</option>
+              <option value="1">1 - Dia</option>
+              <option value="2">2 - Noche</option>
+            </select>
+          </FilterField>
           <FilterField label="Cliente">
             <select style={styles.input} value={filtros.cliente} onChange={(e) => setFiltros((p) => ({ ...p, cliente: e.target.value }))}>
               <option value="">Todos</option>
@@ -192,7 +199,7 @@ export default function TicketSalida() {
                   <td style={styles.td}>{row.ch_seri_tckt || '-'}</td>
                   <td style={styles.td}>{row.ch_nume_tckt || '-'}</td>
                   <td style={styles.td}>{formatDateTime(row.dt_fech_emision || row.dt_fech_salida)}</td>
-                  <td style={styles.td}>{row.ch_codi_turno_caja || '-'}</td>
+                  <td style={styles.td}>{formatTurno(row.ch_codi_turno_caja, { withCode: true })}</td>
                   <td style={styles.td}>{row.cliente_desc || '-'}</td>
                   <td style={styles.td}>{row.chofer_desc || '-'}</td>
                   <td style={styles.td}>{formatDateTime(row.dt_fech_ingreso)}</td>

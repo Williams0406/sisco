@@ -19,6 +19,12 @@ from maestros.models import (
 ZERO = Decimal('0.000')
 IGV_FACTOR = Decimal('1.18')
 IGV_RATE = Decimal('0.18')
+SHIFT_DAY = '1'
+SHIFT_NIGHT = '2'
+TURNO_CAJA_CHOICES = (
+    (SHIFT_DAY, 'Dia'),
+    (SHIFT_NIGHT, 'Noche'),
+)
 
 
 def _decimal_or_zero(value):
@@ -29,6 +35,33 @@ def _decimal_or_zero(value):
 
 def _is_true_flag(value):
     return str(value).strip().lower() in {'1', 'true', 't', 'yes', 'si'}
+
+
+def _normalize_turno_code(value):
+    if value in (None, ''):
+        return None
+
+    token = str(value).strip().lower()
+    if not token:
+        return None
+
+    if token in {'1', '01', '1.0', 'dia', 'day'}:
+        return SHIFT_DAY
+    if token in {'2', '02', '2.0', 'noche', 'night'}:
+        return SHIFT_NIGHT
+    return None
+
+
+def _normalize_and_validate_turno_code(value, field_name):
+    if value in (None, ''):
+        return None
+
+    normalized = _normalize_turno_code(value)
+    if normalized is None:
+        raise ValidationError({
+            field_name: 'Solo se permiten los valores 1 (dia) y 2 (noche).'
+        })
+    return normalized
 
 
 def _validate_personal_cajero_code(codigo, field_name='ch_codi_cajero'):
@@ -128,9 +161,9 @@ def _resolve_turno_caja(reference_dt):
     reference_time = reference_dt.time()
 
     if _time_is_within_range(reference_time, config_turno.tm_hora_inicio_dia, config_turno.tm_hora_fin_dia):
-        return 'dia'
+        return SHIFT_DAY
     if _time_is_within_range(reference_time, config_turno.tm_hora_inicio_noche, config_turno.tm_hora_fin_noche):
-        return 'noche'
+        return SHIFT_NIGHT
     return None
 
 
@@ -143,9 +176,9 @@ def _resolve_turno_bucket(reference_dt):
     if not turno:
         return None, None
 
-    shift_start_time = config_turno.tm_hora_inicio_dia if turno == 'dia' else config_turno.tm_hora_inicio_noche
+    shift_start_time = config_turno.tm_hora_inicio_dia if turno == SHIFT_DAY else config_turno.tm_hora_inicio_noche
     bucket_date = reference_dt.date()
-    if turno == 'noche' and config_turno.tm_hora_inicio_noche > config_turno.tm_hora_fin_noche:
+    if turno == SHIFT_NIGHT and config_turno.tm_hora_inicio_noche > config_turno.tm_hora_fin_noche:
         if reference_dt.time() < config_turno.tm_hora_inicio_dia:
             bucket_date -= timedelta(days=1)
     bucket_dt = datetime.combine(bucket_date, shift_start_time)
@@ -377,7 +410,7 @@ class MovTicket(AuditFieldsMixin, models.Model):
     )
     dt_fech_emision = models.DateTimeField(null=True, blank=True)
     dt_fech_turno = models.DateTimeField(null=True, blank=True)
-    ch_codi_turno_caja = models.CharField(max_length=5, null=True, blank=True)
+    ch_codi_turno_caja = models.CharField(max_length=1, null=True, blank=True, choices=TURNO_CAJA_CHOICES)
     ch_codi_vehiculo = models.ForeignKey(
         MaeVehiculo,
         on_delete=models.PROTECT,
@@ -453,7 +486,7 @@ class MovTicket(AuditFieldsMixin, models.Model):
     ch_esta_cliente_vip = models.CharField(max_length=1, null=True, blank=True)
     ch_tipo_vehiculo = models.CharField(max_length=2, null=True, blank=True)
     ch_codi_garita_sld = models.CharField(max_length=3, null=True, blank=True)
-    ch_codi_turno_sld = models.CharField(max_length=5, null=True, blank=True)
+    ch_codi_turno_sld = models.CharField(max_length=1, null=True, blank=True, choices=TURNO_CAJA_CHOICES)
     ch_codi_cajero_sld = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_usua_dscto = models.CharField(max_length=15, null=True, blank=True)
     vc_desc_dscto = models.CharField(max_length=100, null=True, blank=True)
@@ -470,6 +503,24 @@ class MovTicket(AuditFieldsMixin, models.Model):
     class Meta:
         db_table = 'MOV_TICKET'
         verbose_name = 'Ticket'
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ch_codi_turno_caja__in=[SHIFT_DAY, SHIFT_NIGHT])
+                    | models.Q(ch_codi_turno_caja__isnull=True)
+                    | models.Q(ch_codi_turno_caja='')
+                ),
+                name='mov_ticket_turno_caja_valid',
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ch_codi_turno_sld__in=[SHIFT_DAY, SHIFT_NIGHT])
+                    | models.Q(ch_codi_turno_sld__isnull=True)
+                    | models.Q(ch_codi_turno_sld='')
+                ),
+                name='mov_ticket_turno_sld_valid',
+            ),
+        ]
 
     def __str__(self):
         return f'Ticket #{self.nu_codi_ticket}'
@@ -707,6 +758,8 @@ class MovTicket(AuditFieldsMixin, models.Model):
         )
 
     def save(self, *args, **kwargs):
+        self.ch_codi_turno_caja = _normalize_turno_code(self.ch_codi_turno_caja)
+        self.ch_codi_turno_sld = _normalize_turno_code(self.ch_codi_turno_sld)
         paid_amount = ZERO
         previous_cancelado = False
         self._hydrate_vehicle_context()
@@ -716,6 +769,8 @@ class MovTicket(AuditFieldsMixin, models.Model):
         turno_salida = _resolve_turno_caja(self.dt_fech_salida)
         if turno_salida:
             self.ch_codi_turno_sld = turno_salida
+        self.ch_codi_turno_caja = _normalize_and_validate_turno_code(self.ch_codi_turno_caja, 'ch_codi_turno_caja')
+        self.ch_codi_turno_sld = _normalize_and_validate_turno_code(self.ch_codi_turno_sld, 'ch_codi_turno_sld')
         if self.dt_fech_salida:
             if not self.dt_fech_turno_sld:
                 self.dt_fech_turno_sld = self.dt_fech_salida
@@ -792,7 +847,7 @@ class CabCobranzaCredito(AuditFieldsMixin, models.Model):
     )
     ch_codi_cajero = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_garita = models.CharField(max_length=3, null=True, blank=True)
-    ch_codi_turno_caja = models.CharField(max_length=5, null=True, blank=True) #por que?
+    ch_codi_turno_caja = models.CharField(max_length=1, null=True, blank=True, choices=TURNO_CAJA_CHOICES) #por que?
     dt_fech_turno = models.DateTimeField(null=True, blank=True) 
     ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
     ch_codi_usua_regi = models.CharField(max_length=15, null=True, blank=True)
@@ -803,14 +858,26 @@ class CabCobranzaCredito(AuditFieldsMixin, models.Model):
     class Meta:
         db_table = 'CAB_COBRANZA_CREDITO'
         verbose_name = 'Cobranza Crédito'
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ch_codi_turno_caja__in=[SHIFT_DAY, SHIFT_NIGHT])
+                    | models.Q(ch_codi_turno_caja__isnull=True)
+                    | models.Q(ch_codi_turno_caja='')
+                ),
+                name='cab_cobr_cred_turno_caja_valid',
+            ),
+        ]
 
     def __str__(self):
         return f'Cobranza #{self.nu_codi_cobr_cred}'
 
     def save(self, *args, **kwargs):
+        self.ch_codi_turno_caja = _normalize_turno_code(self.ch_codi_turno_caja)
         turno_caja = _resolve_turno_caja(self.dt_fech_turno or self.dt_fech_cobr)
         if turno_caja:
             self.ch_codi_turno_caja = turno_caja
+        self.ch_codi_turno_caja = _normalize_and_validate_turno_code(self.ch_codi_turno_caja, 'ch_codi_turno_caja')
         if not self.ch_codi_garita:
             self.ch_codi_garita = _default_garita_code()
         _validate_personal_cajero_code(self.ch_codi_cajero, 'ch_codi_cajero')
@@ -950,7 +1017,7 @@ class CabCierreTurno(AuditFieldsMixin, models.Model):
     """Cierre de turno de caja."""
     nu_codi_cierre = models.AutoField(primary_key=True)
     dt_fech_turno = models.DateTimeField(null=True, blank=True)
-    ch_codi_turno_caja = models.CharField(max_length=5, null=True, blank=True)
+    ch_codi_turno_caja = models.CharField(max_length=1, null=True, blank=True, choices=TURNO_CAJA_CHOICES)
     ch_codi_cajero = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_garita = models.CharField(max_length=3, null=True, blank=True)
     ch_seri_cierre = models.CharField(max_length=4, null=True, blank=True)
@@ -974,6 +1041,16 @@ class CabCierreTurno(AuditFieldsMixin, models.Model):
     class Meta:
         db_table = 'CAB_CIERRE_TURNO'
         verbose_name = 'Cierre de Turno'
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ch_codi_turno_caja__in=[SHIFT_DAY, SHIFT_NIGHT])
+                    | models.Q(ch_codi_turno_caja__isnull=True)
+                    | models.Q(ch_codi_turno_caja='')
+                ),
+                name='cab_cierre_turno_caja_valid',
+            ),
+        ]
 
     def __str__(self):
         return f'Cierre #{self.nu_codi_cierre}'
@@ -1095,9 +1172,11 @@ class CabCierreTurno(AuditFieldsMixin, models.Model):
         self.nu_impo_util_turno = _decimal_or_zero(self.nu_impo_tota_efectivo) + self.nu_impo_total
 
     def save(self, *args, **kwargs):
+        self.ch_codi_turno_caja = _normalize_turno_code(self.ch_codi_turno_caja)
         turno_caja = _resolve_turno_caja(self.dt_fech_turno)
         if turno_caja:
             self.ch_codi_turno_caja = turno_caja
+        self.ch_codi_turno_caja = _normalize_and_validate_turno_code(self.ch_codi_turno_caja, 'ch_codi_turno_caja')
         if not self.ch_codi_garita:
             self.ch_codi_garita = _default_garita_code()
         _validate_personal_cajero_code(self.ch_codi_cajero, 'ch_codi_cajero')
@@ -1146,7 +1225,7 @@ class CabReciboEgreso(AuditFieldsMixin, models.Model):
     )
     ch_codi_cajero = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_garita = models.CharField(max_length=3, null=True, blank=True)
-    ch_codi_turno_caja = models.CharField(max_length=5, null=True, blank=True)
+    ch_codi_turno_caja = models.CharField(max_length=1, null=True, blank=True, choices=TURNO_CAJA_CHOICES)
     ch_codi_autoriza = models.CharField(max_length=15, null=True, blank=True)
     ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
     ch_codi_usua_regi = models.CharField(max_length=15, null=True, blank=True)
@@ -1157,14 +1236,26 @@ class CabReciboEgreso(AuditFieldsMixin, models.Model):
     class Meta:
         db_table = 'CAB_RECIBO_EGRESO'
         verbose_name = 'Recibo de Egreso'
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ch_codi_turno_caja__in=[SHIFT_DAY, SHIFT_NIGHT])
+                    | models.Q(ch_codi_turno_caja__isnull=True)
+                    | models.Q(ch_codi_turno_caja='')
+                ),
+                name='cab_rec_egre_turno_caja_valid',
+            ),
+        ]
 
     def __str__(self):
         return f'Egreso #{self.nu_codi_recibo}'
 
     def save(self, *args, **kwargs):
+        self.ch_codi_turno_caja = _normalize_turno_code(self.ch_codi_turno_caja)
         turno_caja, bucket_datetime = _resolve_turno_bucket(self.dt_fech_egre or self.dt_fech_turno)
         if turno_caja:
             self.ch_codi_turno_caja = turno_caja
+        self.ch_codi_turno_caja = _normalize_and_validate_turno_code(self.ch_codi_turno_caja, 'ch_codi_turno_caja')
         if bucket_datetime:
             self.dt_fech_turno = bucket_datetime
         if not self.ch_codi_garita:
@@ -1220,7 +1311,7 @@ class CabReciboIngreso(AuditFieldsMixin, models.Model):
     )
     ch_codi_cajero = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_garita = models.CharField(max_length=3, null=True, blank=True)
-    ch_codi_turno_caja = models.CharField(max_length=5, null=True, blank=True)
+    ch_codi_turno_caja = models.CharField(max_length=1, null=True, blank=True, choices=TURNO_CAJA_CHOICES)
     ch_esta_activo = models.CharField(max_length=1, null=True, blank=True)
     ch_codi_usua_regi = models.CharField(max_length=15, null=True, blank=True)
     ch_codi_usua_modi = models.CharField(max_length=15, null=True, blank=True)
@@ -1230,14 +1321,26 @@ class CabReciboIngreso(AuditFieldsMixin, models.Model):
     class Meta:
         db_table = 'CAB_RECIBO_INGRESO'
         verbose_name = 'Recibo de Ingreso'
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ch_codi_turno_caja__in=[SHIFT_DAY, SHIFT_NIGHT])
+                    | models.Q(ch_codi_turno_caja__isnull=True)
+                    | models.Q(ch_codi_turno_caja='')
+                ),
+                name='cab_rec_ingr_turno_caja_valid',
+            ),
+        ]
 
     def __str__(self):
         return f'Ingreso #{self.nu_codi_recibo}'
 
     def save(self, *args, **kwargs):
+        self.ch_codi_turno_caja = _normalize_turno_code(self.ch_codi_turno_caja)
         turno_caja, bucket_datetime = _resolve_turno_bucket(self.dt_fech_ingr or self.dt_fech_turno)
         if turno_caja:
             self.ch_codi_turno_caja = turno_caja
+        self.ch_codi_turno_caja = _normalize_and_validate_turno_code(self.ch_codi_turno_caja, 'ch_codi_turno_caja')
         if bucket_datetime:
             self.dt_fech_turno = bucket_datetime
         if not self.ch_codi_garita:

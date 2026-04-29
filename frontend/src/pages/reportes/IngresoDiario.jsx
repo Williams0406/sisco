@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import api from '../../api/axios';
 import { theme } from '../../styles/tokens';
+import { formatTurno } from '../../utils/turno';
 
 const formatDate = (value) => {
   if (!value) return '-';
@@ -146,7 +147,7 @@ export default function IngresoDiario() {
                   return (
                     <tr key={row.nu_codi_cierre || index} style={index % 2 !== 0 ? styles.trOdd : undefined}>
                       <td style={styles.td}>{formatDate(row.dt_fech_turno)}</td>
-                      <td style={styles.td}>{row.ch_codi_turno_caja || '-'}</td>
+                      <td style={styles.td}>{formatTurno(row.ch_codi_turno_caja, { withCode: true })}</td>
                       <td style={styles.td}>{row.ch_seri_cierre || '-'}</td>
                       <td style={styles.td}>{row.ch_nume_cierre || '-'}</td>
                       <td style={styles.td}>{row.ch_codi_cajero || '-'}</td>

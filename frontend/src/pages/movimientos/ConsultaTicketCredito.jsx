@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import api from '../../api/axios';
 import { theme } from '../../styles/tokens';
+import { formatTurno } from '../../utils/turno';
 
 const formatDateTime = (value) => {
   if (!value) return '-';
@@ -135,7 +136,7 @@ export default function ConsultaTicketCredito() {
                   <td style={styles.td}>{formatDateTime(ticket.dt_fech_emision)}</td>
                   <td style={styles.td}>{ticket.vehiculo_placa || '-'}</td>
                   <td style={styles.td}>{ticket.ch_codi_cajero || '-'}</td>
-                  <td style={styles.td}>{ticket.ch_codi_turno_caja || '-'}</td>
+                  <td style={styles.td}>{formatTurno(ticket.ch_codi_turno_caja, { withCode: true })}</td>
                   <td style={styles.td}>{formatDateTime(ticket.dt_fech_ingreso)}</td>
                   <td style={styles.td}>{formatDateTime(ticket.dt_fech_salida)}</td>
                   <td style={{ ...styles.td, ...styles.amountCell }}>{formatMoney(ticket.nu_impo_total)}</td>

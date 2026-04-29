@@ -204,6 +204,29 @@ class DataSyncApiTests(TestCase):
         self.assertTrue(MovTicket.objects.filter(nu_codi_ticket=1, ch_esta_ticket='A').exists())
         self.assertTrue(MovTicket.objects.filter(nu_codi_ticket=2, ch_esta_ticket='C').exists())
 
+    def test_import_normalizes_legacy_turno_codes_to_numeric_values(self):
+        response = self.client.post(
+            '/api/seguridad/data-sync/import/',
+            {
+                'dry_run': 'false',
+                'files': [
+                    csv_file(
+                        'MOV_TICKET.csv',
+                        [
+                            'NU_CODI_TICKET,CH_CODI_TURNO_CAJA,CH_CODI_TURNO_SLD,CH_ESTA_TICKET,CH_TIPO_COMPROBANTE',
+                            '1,01,noche,A,01',
+                        ],
+                    ),
+                ],
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        ticket = MovTicket.objects.get(nu_codi_ticket=1)
+        self.assertEqual(ticket.ch_codi_turno_caja, '1')
+        self.assertEqual(ticket.ch_codi_turno_sld, '2')
+
     def test_import_rejects_overlong_mov_ticket_char_values_before_hitting_db(self):
         response = self.client.post(
             '/api/seguridad/data-sync/import/',
